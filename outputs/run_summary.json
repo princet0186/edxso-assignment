@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-10-01T22:05:11+00:00",
+  "campaign_id": "edtech-2026-q4",
+  "rules_version": "1.0",
+  "funnel": {
+    "Discovered channels": 1049,
+    "Within subscriber range": 263,
+    "Recent videos fetched": 263,
+    "Engagement rate computed": 236,
+    "Niche classified": 263,
+    "Qualified": 93,
+    "Verified email found": 44,
+    "Messages generated": 57,
+    "Messages approved": 0
+  },
+  "rejection_reasons": {
+    "SUBSCRIBERS_OUT_OF_RANGE": 786,
+    "ENGAGEMENT_TOO_LOW": 125,
+    "ENGAGEMENT_UNAVAILABLE": 27,
+    "LOW_RELEVANCE": 23,
+    "NICHE_MISMATCH": 14,
+    "LANGUAGE": 10,
+    "BRAND_SAFETY": 2
+  },
+  "email_hit_rate": 0.473,
+  "email_sources": {
+    "CHANNEL_DESCRIPTION": 33,
+    "WEBSITE": 2,
+    "VIDEO_DESCRIPTION": 9
+  },
+  "classification_models": {
+    "gemini/gemini-3.5-flash": 30,
+    "groq/openai/gpt-oss-120b": 65,
+    "gemini/gemini-2.5-flash": 45,
+    "gemini/gemini-3.1-flash-lite": 123
+  },
+  "message_models": {
+    "gemini/gemini-3.1-flash-lite": 57
+  },
+  "messages_needing_review": 0,
+  "messages_with_similarity_warning": 0,
+  "youtube_quota_used_today": 3558
+}
