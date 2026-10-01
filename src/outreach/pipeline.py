@@ -16,6 +16,7 @@ from outreach.enrichment.stage import enrich_contacts
 from outreach.filtering.stage import qualify_creators
 from outreach.metrics import compute_metrics
 from outreach.models import PipelineRun, RunStatus, utc_now
+from outreach.personalize.generator import generate_messages
 from outreach.sources.youtube import QuotaBudgetExceeded, QuotaTracker
 from outreach.stage import StageContext, StageHandler
 
@@ -33,6 +34,7 @@ class Stage(StrEnum):
     CLASSIFY = "classify"
     FILTER = "filter"
     ENRICH = "enrich"
+    GENERATE = "generate"
 
 
 STAGE_HANDLERS: dict[Stage, StageHandler] = {
@@ -41,6 +43,7 @@ STAGE_HANDLERS: dict[Stage, StageHandler] = {
     Stage.CLASSIFY: classify_creators,
     Stage.FILTER: qualify_creators,
     Stage.ENRICH: enrich_contacts,
+    Stage.GENERATE: generate_messages,
 }
 
 
@@ -77,7 +80,8 @@ def run_pipeline(
             logger.warning("Stopping early: %s", exc)
             session.rollback()
             _finish_run(session, run, quota, RunStatus.PARTIAL, failure=str(exc))
-        except Exception as exc:
+        except BaseException as exc:
+            # BaseException so Ctrl+C is recorded too; the run must never be left RUNNING.
             session.rollback()
             _finish_run(session, run, quota, RunStatus.FAILED, failure=repr(exc))
             raise
