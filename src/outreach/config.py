@@ -16,6 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = PROJECT_ROOT / "config"
 ENV_FILE = CONFIG_DIR / ".env"
 SETTINGS_FILE = CONFIG_DIR / "settings.yaml"
+BRAND_FILE = CONFIG_DIR / "brand.yaml"
 DEFAULT_DATABASE_URL = "sqlite:///data/outreach.db"
 MAX_SCORE = 100
 
@@ -155,6 +156,25 @@ class EnrichmentSettings(FrozenModel):
     user_agent: str
 
 
+class AngleThresholds(FrozenModel):
+    ambassador_min_engagement: float = Field(gt=0, lt=1)
+    ambassador_min_uploads: int = Field(gt=0)
+    sponsorship_min_subscribers: int = Field(gt=0)
+    ugc_max_subscribers: int = Field(gt=0)
+
+
+class PersonalizationSettings(FrozenModel):
+    temperature: float = Field(ge=0, le=2)
+    max_validation_retries: int = Field(ge=0)
+    email_words_min: int = Field(gt=0)
+    email_words_max: int = Field(gt=0)
+    dm_words_min: int = Field(gt=0)
+    dm_words_max: int = Field(gt=0)
+    similarity_warning_threshold: float = Field(gt=0, le=1)
+    recent_videos_in_brief: int = Field(gt=0)
+    angles: AngleThresholds
+
+
 class Settings(FrozenModel):
     campaign_id: str
     rules_version: str
@@ -166,6 +186,18 @@ class Settings(FrozenModel):
     llm: LlmSettings
     scoring: ScoringSettings
     enrichment: EnrichmentSettings
+    personalization: PersonalizationSettings
+
+
+class BrandProfile(FrozenModel):
+    name: str
+    is_demo_brand: bool
+    product: str
+    audience: str
+    value_propositions: list[str] = Field(min_length=1)
+    default_sender_name: str
+    offers: dict[str, str]
+    opt_out_line: str
 
 
 @lru_cache
@@ -177,3 +209,9 @@ def load_secrets() -> Secrets:
 def load_settings(path: Path = SETTINGS_FILE) -> Settings:
     with path.open(encoding="utf-8") as settings_file:
         return Settings.model_validate(yaml.safe_load(settings_file))
+
+
+@lru_cache
+def load_brand(path: Path = BRAND_FILE) -> BrandProfile:
+    with path.open(encoding="utf-8") as brand_file:
+        return BrandProfile.model_validate(yaml.safe_load(brand_file))

@@ -79,6 +79,13 @@ class EmailSource(StrEnum):
     NONE = "NONE"
 
 
+class ReviewStatus(StrEnum):
+    GENERATED = "GENERATED"
+    NEEDS_REVIEW = "NEEDS_REVIEW"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 EMAIL_NOT_FOUND = "Not Found"
 NOT_AVAILABLE = "Not Available"
 
@@ -236,3 +243,33 @@ class LlmCacheEntry(SQLModel, table=True):
     provider: str
     model: str
     created_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
+
+
+class OutreachMessage(SQLModel, table=True):
+    """One personalised email + Instagram DM per creator per campaign."""
+
+    __tablename__ = "outreach_messages"
+    __table_args__ = (UniqueConstraint("creator_id", "campaign_id"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    creator_id: int = Field(foreign_key=CREATOR_FK, index=True)
+    campaign_id: str
+    angle: str
+    angle_reason: str
+    email_subject: str
+    email_body: str
+    email_word_count: int
+    instagram_dm: str
+    dm_word_count: int
+    referenced_video_title: str | None = None
+    signals_used: list[str] = Field(default_factory=list, sa_column=json_column())
+    validation_issues: list[str] = Field(default_factory=list, sa_column=json_column())
+    attempts: int
+    similarity_warning: str | None = None
+    provider: str
+    model: str
+    prompt_version: str
+    review_status: ReviewStatus
+    edited_by_reviewer: bool = False
+    created_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
+    reviewed_at: datetime | None = Field(default=None, sa_column=utc_column(nullable=True))

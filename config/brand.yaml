@@ -1,0 +1,20 @@
+# Brand brief used for every pitch.
+# SkillSprint is a FICTIONAL demo brand (PRD OQ-1 default) so that generated pitches never
+# make claims about a real company's products. Replace this file to pitch a real brand.
+name: SkillSprint
+is_demo_brand: true
+product: an interview-prep and hands-on coding practice platform
+audience: students and early-career developers
+value_propositions:
+  - guided learning paths from first program to job-ready projects
+  - mock technical interviews with instant AI feedback
+  - free premium access for partner creators and their communities
+default_sender_name: SkillSprint Partnerships Team
+offers:
+  BRAND_AMBASSADOR: a paid long-term brand ambassador program
+  SPONSORED_INTEGRATION: a paid sponsored segment in one of your upcoming videos
+  PAID_PLACEMENT: a paid product placement in one of your tool or setup videos
+  AFFILIATE: an affiliate partnership with a unique discount code for your audience and commission on every sign-up
+  UGC: paid short-form UGC videos showing how you use SkillSprint
+  BARTER: free premium access for you plus premium giveaways for your community
+opt_out_line: Not a fit? Just reply "no thanks" and we won't contact you again.

@@ -94,3 +94,19 @@ enrichment:
   request_timeout_seconds: 10
   seconds_between_requests_per_domain: 1.0
   user_agent: "EdxsoOutreachResearchBot/1.0 (+assignment prototype; respects robots.txt)"
+
+personalization:
+  temperature: 0.7
+  max_validation_retries: 2
+  email_words_min: 60
+  email_words_max: 90
+  dm_words_min: 15
+  dm_words_max: 30
+  # Word-trigram overlap above this between two emails suggests templated output.
+  similarity_warning_threshold: 0.5
+  recent_videos_in_brief: 2
+  angles:
+    ambassador_min_engagement: 0.06
+    ambassador_min_uploads: 6
+    sponsorship_min_subscribers: 20000
+    ugc_max_subscribers: 15000
