@@ -5,8 +5,14 @@ from pydantic import BaseModel
 from sqlmodel import Session
 from tenacity import wait_none
 
+from outreach.config import Secrets, load_settings
 from outreach.llm.cache import LlmCache
-from outreach.llm.client import LlmClient, LlmUnavailableError, parse_json_output
+from outreach.llm.client import (
+    LlmClient,
+    LlmUnavailableError,
+    build_llm_client,
+    parse_json_output,
+)
 from outreach.llm.types import ChatMessage, LlmRequest, Role
 
 
@@ -112,3 +118,21 @@ def test_failing_primary_is_skipped_during_cooldown_then_retried(session: Sessio
     now[0] += 301  # cooldown over: primary is tried again
     ask("fourth")
     assert primary.calls > calls_when_opened
+
+
+def test_each_configured_model_becomes_its_own_fallback_step(session: Session) -> None:
+    secrets = Secrets(
+        _env_file=None,
+        gemini_api_key="g-key",
+        gemini_models="gemini-2.5-flash, gemini-3.1-flash-lite",
+        groq_api_key="q-key",
+        groq_models="openai/gpt-oss-120b",
+    )
+
+    client = build_llm_client(secrets, load_settings().llm, session)
+
+    assert [(b.name, b.model) for b in client._backends] == [
+        ("gemini", "gemini-2.5-flash"),
+        ("gemini", "gemini-3.1-flash-lite"),
+        ("groq", "openai/gpt-oss-120b"),
+    ]

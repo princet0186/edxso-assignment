@@ -102,8 +102,8 @@ exdso-assignment/
 ```
 YOUTUBE_DATA_API_KEY=
 LLM_PROVIDERS=gemini,groq                  # fallback order
-GEMINI_API_KEY=      GEMINI_MODEL=<flash model id>
-GROQ_API_KEY=        GROQ_MODEL=<model id>
+GEMINI_API_KEY=      GEMINI_MODELS=gemini-2.5-flash,gemini-3.1-flash-lite   # ordered fallback list
+GROQ_API_KEY=        GROQ_MODELS=openai/gpt-oss-120b
 SMTP_HOST=smtp.gmail.com  SMTP_PORT=587  SMTP_USER=  SMTP_APP_PASSWORD=
 SEND_MODE=DRY_RUN                          # DRY_RUN | REDIRECT | LIVE
 TEST_INBOX=                                # REDIRECT target

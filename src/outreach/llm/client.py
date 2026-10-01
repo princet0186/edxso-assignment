@@ -18,7 +18,7 @@ from sqlmodel import Session
 from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 from tenacity.wait import wait_base
 
-from outreach.config import LlmSettings, MissingConfigError, Secrets
+from outreach.config import LlmSettings, MissingConfigError, Secrets, split_csv
 from outreach.llm.cache import LlmCache
 from outreach.llm.types import LlmRequest, LlmResult
 
@@ -98,6 +98,10 @@ class OpenAICompatibleBackend:
         self._last_call_at = time.monotonic()
 
 
+def _backend_key(backend: CompletionBackend) -> str:
+    return f"{backend.name}/{backend.model}"
+
+
 class CircuitBreaker:
     def __init__(
         self, failure_threshold: int, cooldown_seconds: float, clock: Callable[[], float]
@@ -146,7 +150,9 @@ class LlmClient:
         self._cache = cache
         self._backoff = backoff
         self._breakers = {
-            backend.name: CircuitBreaker(CIRCUIT_FAILURE_THRESHOLD, CIRCUIT_COOLDOWN_SECONDS, clock)
+            _backend_key(backend): CircuitBreaker(
+                CIRCUIT_FAILURE_THRESHOLD, CIRCUIT_COOLDOWN_SECONDS, clock
+            )
             for backend in backends
         }
 
@@ -162,13 +168,13 @@ class LlmClient:
 
         failures: list[str] = []
         for backend in self._backends_to_try():
-            breaker = self._breakers[backend.name]
+            breaker = self._breakers[_backend_key(backend)]
             try:
                 text, value = self._complete_with_retries(backend, request, schema)
             except (*RETRYABLE_ERRORS, openai.APIStatusError) as exc:
                 breaker.record_failure()
-                failures.append(f"{backend.name}: {type(exc).__name__}: {str(exc)[:200]}")
-                logger.warning("LLM provider %s failed; trying next. %s", backend.name, exc)
+                failures.append(f"{_backend_key(backend)}: {type(exc).__name__}: {str(exc)[:200]}")
+                logger.warning("LLM %s failed; trying next. %s", _backend_key(backend), exc)
                 continue
             breaker.record_success()
             self._cache.put(cache_key, text, backend.name, backend.model)
@@ -176,7 +182,7 @@ class LlmClient:
         raise LlmUnavailableError(" | ".join(failures))
 
     def _backends_to_try(self) -> list[CompletionBackend]:
-        healthy = [b for b in self._backends if not self._breakers[b.name].is_open()]
+        healthy = [b for b in self._backends if not self._breakers[_backend_key(b)].is_open()]
         # If every circuit is open, trying them all beats failing without an attempt.
         return healthy or self._backends
 
@@ -196,25 +202,28 @@ class LlmClient:
         return retrying(complete_and_parse)
 
 
-def _provider_config(name: str, secrets: Secrets, settings: LlmSettings) -> ProviderConfig:
+def _provider_configs(name: str, secrets: Secrets, settings: LlmSettings) -> list[ProviderConfig]:
+    """One config per model: free-tier limits are per model, so each model is its own
+    fallback step with its own pacing and circuit breaker."""
     if name not in settings.requests_per_minute:
         raise MissingConfigError(f"llm.requests_per_minute has no entry for provider {name!r}")
     connection_by_provider = {
-        "gemini": (secrets.gemini_base_url, secrets.gemini_api_key, secrets.gemini_model),
-        "groq": (secrets.groq_base_url, secrets.groq_api_key, secrets.groq_model),
+        "gemini": (secrets.gemini_base_url, secrets.gemini_api_key, secrets.gemini_models),
+        "groq": (secrets.groq_base_url, secrets.groq_api_key, secrets.groq_models),
     }
     if name not in connection_by_provider:
         raise MissingConfigError(f"Unknown LLM provider {name!r} in LLM_PROVIDERS")
-    base_url, api_key, model = connection_by_provider[name]
-    return ProviderConfig(name, base_url, api_key, model, settings.requests_per_minute[name])
+    base_url, api_key, models = connection_by_provider[name]
+    rpm = settings.requests_per_minute[name]
+    return [ProviderConfig(name, base_url, api_key, model, rpm) for model in split_csv(models)]
 
 
 def build_llm_client(secrets: Secrets, settings: LlmSettings, session: Session) -> LlmClient:
     backends: list[CompletionBackend] = []
     for name in secrets.provider_order:
-        config = _provider_config(name, secrets, settings)
-        if not config.api_key:
-            logger.warning("Skipping LLM provider %s: no API key configured", name)
-            continue
-        backends.append(OpenAICompatibleBackend(config, settings.request_timeout_seconds))
+        for config in _provider_configs(name, secrets, settings):
+            if not config.api_key:
+                logger.warning("Skipping LLM provider %s: no API key configured", name)
+                continue
+            backends.append(OpenAICompatibleBackend(config, settings.request_timeout_seconds))
     return LlmClient(backends, LlmCache(session))

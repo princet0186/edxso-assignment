@@ -31,6 +31,10 @@ class SendMode(StrEnum):
     LIVE = "LIVE"
 
 
+def split_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 class Secrets(BaseSettings):
     model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
 
@@ -39,10 +43,10 @@ class Secrets(BaseSettings):
     llm_providers: str = "gemini,groq"
     gemini_api_key: str = ""
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
-    gemini_model: str = "gemini-3.5-flash"
+    gemini_models: str = "gemini-2.5-flash,gemini-3.1-flash-lite"
     groq_api_key: str = ""
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    groq_model: str = "openai/gpt-oss-120b"
+    groq_models: str = "openai/gpt-oss-120b"
 
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
@@ -60,11 +64,11 @@ class Secrets(BaseSettings):
 
     @property
     def provider_order(self) -> list[str]:
-        return [name.strip().lower() for name in self.llm_providers.split(",") if name.strip()]
+        return [name.lower() for name in split_csv(self.llm_providers)]
 
     @property
     def live_allowlist_addresses(self) -> set[str]:
-        return {addr.strip().lower() for addr in self.live_allowlist.split(",") if addr.strip()}
+        return {address.lower() for address in split_csv(self.live_allowlist)}
 
 
 SECRET_NAMES_BY_PURPOSE: dict[str, tuple[str, ...]] = {
