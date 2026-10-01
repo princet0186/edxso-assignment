@@ -9,13 +9,19 @@ from rich.logging import RichHandler
 from rich.table import Table
 from sqlmodel import Session
 
-from outreach.config import SECRET_NAMES_BY_PURPOSE, load_secrets, load_settings
+from outreach.config import SECRET_NAMES_BY_PURPOSE, load_brand, load_secrets, load_settings
 from outreach.db import get_engine, init_db
+from outreach.exports import OUTPUTS_DIR, write_deliverables
+from outreach.personalize.review import approve_all_valid
 from outreach.pipeline import Stage, run_pipeline
 from outreach.reporting import build_funnel, error_count, recent_runs
+from outreach.sending.dispatch import send_queued_emails
+from outreach.sending.smtp import SmtpMailer
 
 ALL_STAGES = "all"
 RECENT_RUNS_SHOWN = 5
+API_DEFAULT_HOST = "127.0.0.1"
+API_DEFAULT_PORT = 8000
 # HTTP client libraries log every request at INFO; that drowns out pipeline progress.
 NOISY_HTTP_LOGGERS = ("httpx", "httpx2", "openai")
 
@@ -104,3 +110,56 @@ def summary() -> None:
             )
         console.print(runs)
         console.print(f"Recorded per-creator errors: {error_count(session)}")
+
+
+@app.command("approve")
+def approve_validated() -> None:
+    """Approve every draft that passed all validators.
+
+    A demo helper; the console's review queue is the normal path. Drafts with open
+    validation issues are never approved.
+    """
+    with Session(get_engine()) as session:
+        approved = approve_all_valid(session, load_settings().campaign_id)
+    console.print(f"Approved {approved} validated drafts.")
+
+
+@app.command()
+def send() -> None:
+    """Send (or simulate, per SEND_MODE) every approved email in the queue, batch by batch."""
+    settings, secrets, brand = load_settings(), load_secrets(), load_brand()
+    console.print(f"Send mode: [bold]{secrets.send_mode}[/bold]")
+    totals: dict[str, int] = {}
+    with Session(get_engine()) as session:
+        while True:
+            outcomes = send_queued_emails(
+                session,
+                settings,
+                secrets,
+                brand,
+                lambda: SmtpMailer(secrets, settings.sending.smtp_timeout_seconds),
+            )
+            if not outcomes:
+                break
+            for status, count in outcomes.items():
+                totals[status] = totals.get(status, 0) + count
+    console.print(f"Delivery outcomes: {totals or 'nothing to send'}")
+
+
+@app.command()
+def export() -> None:
+    """Write the dataset, messages, tracker and run summary to outputs/."""
+    with Session(get_engine()) as session:
+        counts = write_deliverables(session, load_settings(), OUTPUTS_DIR)
+    console.print(f"Wrote {OUTPUTS_DIR}: {counts}")
+
+
+@app.command()
+def api(
+    host: Annotated[str, typer.Option(help="Interface to bind.")] = API_DEFAULT_HOST,
+    port: Annotated[int, typer.Option(help="Port to listen on.")] = API_DEFAULT_PORT,
+) -> None:
+    """Start the HTTP API used by the n8n workflows."""
+    import uvicorn  # imported here: only this command needs the server
+
+    uvicorn.run("outreach.api.main:app", host=host, port=port)
