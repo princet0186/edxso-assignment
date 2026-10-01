@@ -20,7 +20,14 @@ from outreach.personalize.review import (
     reject,
     save_edit,
 )
-from outreach.reporting import build_funnel, creator_rows, message_rows, rejection_reason_counts
+from outreach.reporting import (
+    build_funnel,
+    creator_rows,
+    message_rows,
+    rejection_reason_counts,
+    tracker_rows,
+)
+from outreach.sending.dm_queue import DmNotSendableError, dm_queue, mark_dm_sent
 
 # Single-series bars use one hue: slot 1 (blue) of the validated reference palette.
 BAR_COLOR = "#2a78d6"
@@ -181,3 +188,60 @@ def handle_action(message_id: int, action, verb: str) -> None:
         return
     flash(f"{verb} message #{message_id}.")
     st.rerun()
+
+
+def dm_queue_page() -> None:
+    st.title("Instagram DM queue")
+    st.caption(
+        "Instagram does not allow automated cold DMs, so these are sent by hand: copy the DM, "
+        "open the profile, send it from the brand account, then mark it sent."
+    )
+    settings = load_settings()
+    show_flash()
+    with open_session() as session:
+        items = dm_queue(session, settings.campaign_id)
+    if not items:
+        st.info("No approved messages yet. Approve drafts in the review queue first.")
+        return
+    pending = [item for item in items if item.sent_at is None]
+    st.caption(f"{len(pending)} to send · {len(items) - len(pending)} sent")
+    for item in items:
+        render_dm(item, settings.campaign_id)
+
+
+def render_dm(item, campaign_id: str) -> None:
+    sent_label = f"sent {item.sent_at:%Y-%m-%d %H:%M} UTC" if item.sent_at else "not sent"
+    with st.expander(f"{item.name} · {sent_label}"):
+        st.code(item.dm, language=None, wrap_lines=True)
+        if not item.instagram_url:
+            st.warning("No Instagram handle was found for this creator; the DM cannot be sent.")
+            return
+        st.link_button("Open Instagram profile", item.instagram_url)
+        if item.sent_at is None and st.button("Mark as sent", key=f"dm-{item.creator_id}"):
+            try:
+                with open_session() as session:
+                    mark_dm_sent(session, campaign_id, item.creator_id)
+            except DmNotSendableError as error:
+                st.error(str(error))
+                return
+            flash(f"Marked the DM to {item.name} as sent.")
+            st.rerun()
+
+
+def tracker_page() -> None:
+    st.title("Outreach tracker")
+    settings = load_settings()
+    with open_session() as session:
+        frame = pd.DataFrame(tracker_rows(session, settings.campaign_id))
+    if frame.empty:
+        st.info("Nothing generated yet.")
+        return
+    sent = frame["Sent"].str.startswith("Yes").sum()
+    dm_sent = frame["Instagram DM Sent"].str.startswith("Yes").sum()
+    for column, (label, value) in zip(
+        st.columns(3),
+        [("Messages generated", len(frame)), ("Emails sent", sent), ("DMs sent", dm_sent)],
+        strict=True,
+    ):
+        column.metric(label, f"{value:,}")
+    st.dataframe(frame, hide_index=True)

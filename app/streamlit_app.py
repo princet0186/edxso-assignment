@@ -1,7 +1,13 @@
 """Outreach console — run with: uv run streamlit run app/streamlit_app.py"""
 
 import streamlit as st
-from console_pages import creators_page, dashboard_page, review_page
+from console_pages import (
+    creators_page,
+    dashboard_page,
+    dm_queue_page,
+    review_page,
+    tracker_page,
+)
 
 from outreach.db import get_engine, init_db
 
@@ -12,6 +18,8 @@ navigation = st.navigation(
         st.Page(dashboard_page, title="Dashboard", icon=":material/monitoring:", default=True),
         st.Page(creators_page, title="Creators", icon=":material/groups:"),
         st.Page(review_page, title="Review queue", icon=":material/rate_review:"),
+        st.Page(dm_queue_page, title="Instagram DMs", icon=":material/chat:"),
+        st.Page(tracker_page, title="Outreach tracker", icon=":material/outgoing_mail:"),
     ]
 )
 navigation.run()

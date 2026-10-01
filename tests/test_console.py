@@ -31,7 +31,9 @@ def render_page(page_name: str) -> None:
     getattr(console_pages, page_name)()
 
 
-@pytest.mark.parametrize("page", ["dashboard_page", "creators_page", "review_page"])
+@pytest.mark.parametrize(
+    "page", ["dashboard_page", "creators_page", "review_page", "dm_queue_page", "tracker_page"]
+)
 def test_page_renders_without_errors(fresh_database, page: str) -> None:
     app = AppTest.from_function(render_page, args=(page,), default_timeout=RENDER_TIMEOUT_SECONDS)
 
