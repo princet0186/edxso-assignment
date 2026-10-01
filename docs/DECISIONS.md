@@ -134,6 +134,61 @@ Format: `D-<n> · <title> · <date> · Status`
   - Groq no longer serves Llama models. `openai/gpt-oss-120b` returned valid JSON in 0.6 s.
 - **Decision:** Primary `gemini-3.5-flash` (newest working Flash model, for writing quality); fallback Groq `openai/gpt-oss-120b`. Both are set in `config/.env` and can be changed without code changes.
 
+### D-18 · Resilient free-tier LLM use: circuit breaker + per-model fallback · 2026-10-01 · Accepted (supersedes the model choice in D-17)
+- **Context:** The live classification run measured three different failure modes:
+  - Gemini returned 503 "high demand" repeatedly; each one cost 3 backed-off attempts before Groq was tried.
+  - `gemini-3.5-flash` then hit its free quota (429).
+  - Every Groq model shares an **8,000 tokens/minute** cap. A 5-creator batch requests about 6,000 tokens, so Groq manages about one batch a minute.
+- **Decision:**
+  1. **Circuit breaker:** after 2 consecutive failures a model is skipped for 5 minutes, then tried again.
+  2. **Fallback per model, not per provider:** Gemini's free limits are per model, so `GEMINI_MODELS` / `GROQ_MODELS` are ordered lists and each model is its own fallback step with its own pacing and breaker.
+  3. **Default chain:** `gemini-2.5-flash` → `gemini-3.1-flash-lite` → Groq `openai/gpt-oss-120b`. Groq is last because of its token cap.
+- **Result:** The remaining classifications finished with 0 failures. Successful answers are cached, so re-runs cost nothing.
+
+### D-19 · Classify in batches, and only creators with real metrics · 2026-10-01 · Accepted
+- **Context:** About 260 creators need niche labels, and free tiers allow few requests per minute.
+- **Decision:**
+  - Classify **5 creators per request**. Each reply is validated against a strict schema, and every requested channel ID must come back; a missing one is recorded and retried next run.
+  - Classify only creators inside the size range with fetched videos. Out-of-range channels are rejected on size alone, so labelling them would waste quota.
+- **Trade-off:** One malformed batch delays 5 creators instead of 1. That's acceptable because retries are automatic.
+
+### D-20 · Email enrichment hardening found by spot-checking real data · 2026-10-01 · Accepted
+- **Context:** The 45 emails found were reviewed by hand. One, `info@mysite.com`, was a website-template default: the domain exists and has MX records, so the DNS check alone accepted it.
+- **Decision:**
+  - Template domains (`mysite.com`, `yoursite.com`, `website.com`, …) are now treated as junk.
+  - Each candidate address is checked only once.
+  - The affected creator was re-enriched and is now honestly `Not Found`.
+- **Standing rules (unchanged):**
+  - A creator's website comes **only** from the channel description; video descriptions are full of sponsor links.
+  - Addresses found in video descriptions must repeat across uploads or carry a business label.
+
+### D-21 · Defaults for the open product questions · 2026-10-01 · Accepted
+- **OQ-1 (brand):** A clearly fictional demo brand, **SkillSprint** (`config/brand.yaml`, `is_demo_brand: true`), so generated pitches never make claims about a real company's products. Replacing that one file pitches a real brand.
+- **OQ-3 (region/language):** Global discovery. Country is recorded, not filtered. Content languages `en` and `hi-en` (Hinglish) are allowed, because the pitches are written in English.
+
+### D-22 · API runs stages as background jobs that n8n polls · 2026-10-01 · Accepted
+- **Context:** Discovery and LLM stages take minutes, longer than a sensible HTTP timeout.
+- **Decision:**
+  - `POST /runs/{id}/stages/{stage}` returns **202 with a job ID** immediately, and n8n polls `GET /jobs/{id}` every 10 seconds.
+  - Only one job may be active at a time (409 otherwise), because stages share one SQLite writer and one YouTube quota.
+  - The API refuses to run if `API_KEY` is unset (503) instead of serving unauthenticated requests.
+
+### D-23 · Validators as the quality gate for AI text · 2026-10-01 · Accepted
+- **Decision:** A draft is only sendable after automatic checks:
+  - word limits
+  - the creator is addressed by name
+  - the referenced video exists in the brief **and** is actually mentioned
+  - no placeholders or clichés
+  - **no number that isn't in the brief** (catches invented stats)
+- **What happens on failure:** the validator's feedback goes back to the model for a rewrite, at most twice; then the draft is held as `NEEDS_REVIEW`. A reviewer's edit is re-validated the same way, and a message with open issues cannot be approved.
+
+### D-24 · n8n credentials via the credential store, not workflow JSON · 2026-10-01 · Accepted
+- **Decision:**
+  - The API key is sent through an n8n **Header Auth credential** (`X-API-Key`).
+  - SMTP uses an n8n **SMTP credential**.
+  - Both live in n8n's encrypted credential store. The exported workflow JSON references them only by name, so the repo contains no secrets.
+  - The API base URL sits in one `Config` node per workflow.
+
 ---
 
 ## Sources (checked 2026-10-01)

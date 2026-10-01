@@ -62,38 +62,35 @@ This document explains **how** the system is built: architecture, tech stack, da
 ```
 exdso-assignment/
 ├── README.md
-├── pyproject.toml
-├── .gitignore
+├── pyproject.toml / uv.lock        # Python 3.12, pinned dependencies
+├── .github/workflows/ci.yml        # lint + offline tests on every push
 ├── config/
 │   ├── .env.example                # copy to config/.env (git-ignored) and fill in
-│   ├── settings.yaml               # niche, keywords, thresholds, weights, limits
-│   └── brand.yaml                  # brand persona, product, value props, angles
-├── prompts/
-│   ├── classify_v1.md
-│   └── outreach_v1.md
+│   ├── settings.yaml               # niche, queries, thresholds, weights, limits
+│   └── brand.yaml                  # brand persona, value props, offer per angle
+├── prompts/{classify_v1.md,outreach_v1.md}   # versioned prompts
 ├── src/outreach/
-│   ├── config.py
-│   ├── models.py                   # SQLModel tables + Pydantic DTOs
-│   ├── db.py                       # engine, session, migrations-lite
-│   ├── sources/youtube.py          # API client + QuotaTracker
-│   ├── discovery.py
-│   ├── metrics.py
-│   ├── llm/{client.py,cache.py,schemas.py}
-│   ├── classify.py
-│   ├── filtering/{rules.py,scoring.py}
-│   ├── enrichment/{emails.py,website.py,socials.py}
-│   ├── personalize/{angle.py,generator.py,validators.py,similarity.py}
-│   ├── sending/{claim.py,smtp.py,dm_queue.py}
-│   ├── exports.py
-│   ├── pipeline.py                 # stage runner, job tracking
-│   ├── api/main.py                 # FastAPI
+│   ├── config.py                   # Secrets (.env) + Settings/Brand (YAML), validated
+│   ├── models.py  db.py            # SQLModel tables, engine (WAL, UTC handling)
+│   ├── stage.py   pipeline.py      # stage contract; start_run/execute_stage/finish_run
+│   ├── quota.py                    # YouTube quota-day accounting across runs
+│   ├── sources/youtube.py          # Data API v3 client + QuotaTracker
+│   ├── discovery.py  metrics.py
+│   ├── llm/{client.py,cache.py,types.py}     # fallback chain, circuit breaker, cache
+│   ├── prompts.py  classify.py
+│   ├── filtering/{rules.py,scoring.py,stage.py}
+│   ├── enrichment/{emails.py,links.py,website.py,stage.py}
+│   ├── personalize/{angle.py,brief.py,draft.py,validators.py,similarity.py,generator.py,review.py}
+│   ├── sending/{queue.py,compose.py,smtp.py,dispatch.py,dm_queue.py}
+│   ├── reporting.py  exports.py  jobs.py
+│   ├── api/main.py                 # FastAPI for n8n
 │   └── cli.py                      # Typer
-├── app/streamlit_app.py
+├── app/{streamlit_app.py,console_pages.py}
 ├── n8n/workflows/{pipeline_run.json,outreach_send.json,error_handler.json}
-├── outputs/                        # committed deliverable exports
-├── data/                           # git-ignored (SQLite db, caches)
-├── tests/
-└── docs/{PRD.md,EPS.md,DECISIONS.md,PHASES.md,SETUP.md,screenshots/}
+├── outputs/                        # committed deliverables
+├── data/                           # git-ignored SQLite database
+├── tests/                          # offline: fixtures, fakes, in-memory DBs
+└── docs/{PRD,EPS,DECISIONS,PHASES,SETUP}.md
 ```
 
 ## 4. Configuration
@@ -289,112 +286,125 @@ Results become `FOUND`, `INVALID` (store the reason; the value stays `Not Found`
 **Footer:** a fixed signature plus one opt-out line is appended after validation and is not counted toward the 60–90 words (PRD A-3).
 
 ### 6.7 LLM Client (`llm/client.py`)
-- One `LLMClient.complete_json(schema, messages, temperature)` interface.
-- Providers are configured as `{base_url, api_key, model, rpm}` and called through the `openai` SDK at their OpenAI-compatible endpoints.
-- **Fallback chain:** Gemini → Groq. On 429/5xx/timeout: exponential backoff (tenacity, 3 tries), then move to the next provider.
-- **Client-side rate limiter:** a token bucket per provider, set below the published RPM.
-- **Cache:** responses are stored in `llm_cache`, so re-runs and resumes cost nothing.
-- JSON mode where the provider supports it; otherwise extract the first JSON object and validate it against the schema. Invalid JSON counts as a retryable failure.
-- Each call records provider, model, latency, tokens (if returned) and outcome, and these feed the run summary.
+- One `LlmClient.complete_json(request, schema)` interface; the reply is validated against a Pydantic schema.
+- `GEMINI_MODELS` / `GROQ_MODELS` are ordered lists, and **each model is its own fallback step** (D-18). Default chain: `gemini-2.5-flash` → `gemini-3.1-flash-lite` → Groq `openai/gpt-oss-120b`.
+- Each step has **client-side pacing** below its free-tier requests/minute, **retries** (3 attempts, exponential backoff) for 429/5xx/timeouts/malformed JSON, and a **circuit breaker**: after 2 consecutive failures the step is skipped for 5 minutes.
+- **Cache:** successful replies are stored in `llm_cache`, keyed by a SHA-256 of prompt version, temperature and messages, so re-runs and resumes cost nothing.
+- Provider, model and prompt version are stored with every classification and message.
 
 ## 7. Review & Manual DM Queue (Streamlit, FR-R1–R2, FR-S9)
 
-Pages:
-1. **Dashboard:** run stats, funnel (discovered → metrics → qualified → email found → generated → approved → sent), rejection-reason breakdown, email hit rate.
-2. **Creators:** a filterable table of all records with status and reasons.
-3. **Review queue:** each message next to the creator brief and the signals used, with similarity warnings. Actions: Approve, Edit (re-validates), Reject.
-4. **DM queue:** the DM text with a copy button, the Instagram link if found (otherwise "No Instagram handle found"), and a **Mark sent manually** button that writes `outreach(channel=IG_DM, status=MANUAL_SENT)` plus an event.
-5. **Tracker:** the outreach table and event log, with a download button for exports.
+`uv run streamlit run app/streamlit_app.py`. Pages (each a function in `app/console_pages.py`):
+1. **Dashboard:** stat tiles, funnel bars, rejection-reason bars.
+2. **Creators:** filterable table with status, score and reasons.
+3. **Review queue:** each message next to the angle reason, referenced video, signals, validation issues and similarity warning. Actions: Save edit (re-validates), Approve (blocked while issues exist), Reject, and bulk-approve validated drafts.
+4. **Instagram DMs:** DM text with a copy button, profile link, and **Mark as sent** (recorded once as `MANUAL_SENT`). Creators without a handle show the reason.
+5. **Outreach tracker:** tiles plus the tracker table (same rows as the CSV export).
 
 ## 8. Backend API (FastAPI) — n8n contract
 
-All endpoints need the `X-API-Key` header.
+`uv run outreach api` (port 8000). Every route except `/health` requires `X-API-Key`. The API returns 503 if `API_KEY` is unset (D-22).
 
 | Method & path | Purpose | Response |
 |---|---|---|
-| `POST /runs` | Start a run (snapshots config) | `{run_id}` |
-| `POST /runs/{run_id}/stages/{stage}` | Start a stage asynchronously (`discover`, `metrics`, `classify`, `filter`, `enrich`, `generate`, `export`) | `202 {job_id}` |
-| `GET /jobs/{job_id}` | Poll job status | `{status, progress, error}` |
-| `GET /runs/{run_id}/summary` | Funnel and stats | JSON |
-| `POST /outreach/claim?channel=EMAIL&limit=10` | **Atomically** claim sendable items (see §9) | `[{outreach_id, to, original_to, subject, body, mode, idempotency_key}]` |
-| `POST /outreach/{id}/result` | Report the outcome | `{status}` |
-| `GET /health` | Liveness, DB check, mode | JSON |
+| `GET /health` | Liveness and current send mode | `{status, send_mode}` |
+| `POST /runs` | Start a run (`{"stages": [...]}`) | `201 {run_id}` |
+| `POST /runs/{run_id}/stages/{stage}` | Start one stage as a background job | `202 {job_id}`; 409 if a job is active; 404 unknown run |
+| `GET /jobs/{job_id}` | Poll a job | `{status: QUEUED/RUNNING/SUCCEEDED/FAILED, report, error}` |
+| `POST /runs/{run_id}/finish` | Close the run (COMPLETED / PARTIAL / FAILED from its jobs) | `{status}` |
+| `GET /summary` | Funnel and rejection reasons | JSON |
+| `POST /outreach/claim?limit=10` | **Atomically** claim sendable emails (§9) | `[{outreach_id, deliver_to, intended_recipient, subject, body, mode, method, idempotency_key}]` |
+| `POST /outreach/{id}/result` | Report `SENT` / `SIMULATED` / `FAILED` | `{status}`; 409 if not currently `SENDING` |
+| `POST /events/workflow-error` | Record an n8n failure | `201` |
 
 ## 9. Sending Layer (FR-S1–S8)
 
-### 9.1 Claim logic (`sending/claim.py`), in one DB transaction
-1. Create any missing `outreach` rows (`QUEUED`) for creators that have `messages.review_status=APPROVED` and `contacts.email_status=FOUND`. The UNIQUE constraints make duplicate rows impossible: `INSERT … ON CONFLICT DO NOTHING`.
-2. `UPDATE outreach SET status='SENDING', claimed_at=now, attempts=attempts+1 WHERE status IN ('QUEUED') OR (status='FAILED' AND attempts<3) … LIMIT n RETURNING …`.
-3. Stale claims (`SENDING` for more than 10 minutes) are released back to `QUEUED`. This handles crashes.
-4. Apply `SEND_MODE`:
-   - `DRY_RUN`: `to` = original. The caller must not send, and reports `SIMULATED`.
-   - `REDIRECT`: `to` = `TEST_INBOX`. The subject is prefixed `[TEST → original@x.com]`.
-   - `LIVE`: only if the recipient is in `LIVE_ALLOWLIST`; otherwise `SKIPPED`.
-5. Already `SENT`/`SIMULATED`/`MANUAL_SENT` rows are never claimed again, which is what prevents duplicates (FR-S5).
+### 9.1 Queue logic (`sending/queue.py`)
+1. **Queue:** approved messages with a `FOUND` email are inserted as `QUEUED` with `INSERT … ON CONFLICT DO NOTHING`.
+   - `UNIQUE(campaign, channel, creator)` stops a creator being queued twice.
+   - `UNIQUE(campaign, channel, recipient)` stops one address getting two emails, even if two creators share it.
+2. **Release stale claims:** rows stuck in `SENDING` longer than 10 minutes (a crashed sender) go back to `QUEUED`.
+3. **Atomic claim:** one statement, `UPDATE outreach SET status='SENDING', attempts=attempts+1 WHERE id IN (SELECT id … status QUEUED or FAILED with attempts < 3 … LIMIT n) RETURNING id`. A row can only enter `SENDING` once, so the CLI and n8n can never claim the same email.
+4. **Route by `SEND_MODE`** (`route()`):
+   - `DRY_RUN` → `method=simulate`
+   - `REDIRECT` → deliver to `TEST_INBOX` with subject `[TEST → creator@x.com] …`; a missing `TEST_INBOX` fails safely
+   - `LIVE` → only allowlisted recipients; everyone else is `SKIPPED`
+5. **Compose:** the signature and opt-out line are appended after validation (`compose.py`).
+6. **Record result:** only accepted from `SENDING`, so a second report for the same email is rejected. The status, timestamp, message ID or error, and an `outreach_events` row are written.
 
-`POST /outreach/{id}/result` writes the final status, `sent_at`, `provider_msg_id` or `error`, plus an `outreach_events` row (FR-S4, FR-S6).
+### 9.2 n8n workflows (`n8n/workflows/`)
+Each workflow starts with a `Config` node holding the API base URL. API calls use an n8n **Header Auth** credential and SMTP uses an n8n **SMTP** credential (D-24).
 
-### 9.2 n8n workflows (exported to `n8n/workflows/`)
+**WF1 `pipeline_run`:** Manual trigger → Config → `POST /runs` → Code node (one item per stage) → **Loop Over Items**. For each stage:
+1. `POST /runs/{id}/stages/{stage}`
+2. Wait 10 s → `GET /jobs/{id}`
+3. If still running, go back to the Wait.
+4. If succeeded, move to the next stage. If failed, a **Stop and Error** node fires, which triggers WF3.
 
-**WF1 `pipeline_run`:**
-1. Manual Trigger (or Schedule) → `POST /runs`
-2. For each stage `[discover, metrics, classify, filter, enrich, generate, export]`: `POST stage` → loop {Wait 10 s → `GET /jobs/{id}`} until `done`/`failed`
-3. On `failed`: stop and route to WF3
-4. `GET /summary` → a Set node formats a run report (optionally emailed to the developer)
+After the loop: `POST /runs/{id}/finish` → `GET /summary`.
 
-**WF2 `outreach_send`:**
-1. Schedule Trigger (every 5 min) or Manual → `POST /outreach/claim?limit=10`
-2. Split In Batches (1) → IF `mode == DRY_RUN`
-   - true → Set `{status: SIMULATED}`
-   - false → **Send Email (SMTP)** node (Gmail credentials) → Set `{status: SENT, provider_msg_id}`
-3. The SMTP node's error output → Set `{status: FAILED, error}`
-4. `POST /outreach/{id}/result` → Wait 2 s (throttle) → next item
-5. Gmail send-volume limits are respected by `limit` and the throttle.
+**WF2 `outreach_send`:** Schedule (every 5 min) or Manual → Config → `POST /outreach/claim?limit=10` → IF `method == simulate`:
+- **true** → report `SIMULATED`.
+- **false** → **Send Email** (Gmail SMTP) node with error output enabled:
+  - success → report `SENT` with the SMTP Message-ID
+  - error output → report `FAILED` with the error message
 
-**WF3 `error_handler`:** an Error Trigger logs the failing workflow and node to the backend (`POST /events`) and optionally emails the developer.
+Throughput is capped at 10 per run every 5 minutes, which is well inside Gmail's limits.
 
-The n8n credentials (SMTP, API key header) are created in the n8n UI. Exported JSON files have their credentials stripped. The README documents the import and credential steps, with screenshots.
+**WF3 `error_handler`:** Error Trigger → `POST /events/workflow-error`. Set it as the Error Workflow of WF1 and WF2.
 
-**Networking:** n8n runs locally with `npx n8n` (UI at `localhost:5678`). The backend runs with `uv run uvicorn …` at `http://localhost:8000`. Both are on the same host, so no Docker networking is needed (D-13).
+**Networking:** n8n runs with `npx n8n` (`localhost:5678`); the API runs with `uv run outreach api` (`localhost:8000`) (D-13).
 
-### 9.3 CLI fallback (FR-S8)
-`outreach send --channel email` uses the same `claim()`, `smtplib` and `report_result()` functions, so the logic and guarantees are identical without n8n.
+### 9.3 Python sender (FR-S8)
+`uv run outreach send` drains the same queue through the same `claim_emails()` / `record_result()` functions, so the guarantees are identical without n8n.
 
 ## 10. CLI
 
 ```
+outreach check-env                     # which secrets are set (never their values)
 outreach init-db
-outreach run [--stages discover,metrics,...] [--limit N]   # full or partial pipeline
-outreach send [--mode DRY_RUN|REDIRECT] [--limit N]
-outreach approve --all-valid                               # demo helper (validated only)
-outreach export                                            # → outputs/*.csv|xlsx
-outreach summary [--run-id]
+outreach run [--stages a,b,...] [--limit N]   # stages: discover, metrics, classify, filter,
+                                              #         enrich, generate, export (default: all)
+outreach summary                       # funnel + recent runs
+outreach approve                       # approve drafts that passed every validator
+outreach send                          # send/simulate approved emails per SEND_MODE
+outreach export                        # write outputs/
+outreach api                           # start the API for n8n
 ```
 
 ## 11. Outputs (FR-X1–X4)
 
-| File | Columns |
+Written by `outreach export` (or the `export` stage) to `outputs/`:
+
+| File | Contents |
 |---|---|
-| `outputs/influencers.csv/.xlsx` | Name, Platform, Followers, Engagement Rate, Niche, Sub-niches, Content Themes, Email, Email Source, Profile URL, Instagram, Website, Country, Audience Age, Audience Gender, Status, Score, Reasons |
-| `outputs/messages.csv/.xlsx` | Name, Angle, Email Subject, Email Body, Email Words, DM, DM Words, Signals Used, Model, Prompt Version, Review Status |
-| `outputs/outreach_tracker.csv/.xlsx` | Influencer, Email, Message Generated, Sent, Date, Status, Mode, Channel, Attempts, Error |
-| `outputs/run_summary.json` | Funnel counts, email hit rate, rejection breakdown, LLM stats, quota used |
+| `influencers.csv` | Every creator in the 5k–100k range: Name, Platform, Profile URL, Followers, Engagement Rate (+ method), Niche, Sub-niches, Content Themes, Tone, Audience Level (inferred), Language, Relevance, Email (+ source and source URL), Instagram/TikTok/X/LinkedIn/Website, Audience Geography/Age/Gender, Status, Score, Reasons |
+| `discovered_channels.csv` | Every discovered channel (including out-of-range ones) with its status and reason |
+| `messages.csv` | Angle and why, subject, email body, DM, word counts, referenced video, signals, validation issues, attempts, similarity warning, model, prompt version, review status |
+| `outreach_tracker.csv` | Influencer, Email, Message Generated, Review Status, Sent, Date, Status, Mode, Attempts, Error, Instagram DM Sent, DM Date |
+| `outreach_results.xlsx` | All of the above as sheets |
+| `run_summary.json` | Funnel, rejection reasons, email hit rate and sources, models used, quota used today |
 
 ## 12. Error Handling Matrix (NFR-3)
 
 | Failure | Detection | Handling | Record |
 |---|---|---|---|
-| YouTube 403 quotaExceeded | HTTP status/reason | Stop discovery cleanly; run marked `PARTIAL` | `runs.status`, summary |
-| YouTube 5xx / timeout | httpx exception | 4 attempts with exponential backoff; then that creator is left unmarked and retried next run | `pipeline_errors` |
-| Malformed API item | `MalformedYouTubeData` | That creator is marked failed; the stage continues | `pipeline_errors` |
-| Hidden subscribers / likes | Missing fields | Reason codes `R_SUBS_HIDDEN` / `R_ER_UNAVAILABLE` | filter_results |
-| Website blocked / robots disallow / 4xx | robotparser / status | Skip the site; email stays `Not Found` | contacts.email_source_type=`blocked` |
-| LLM 429 / 5xx | status | Backoff, then the next provider in the chain | llm stats |
-| LLM invalid JSON / schema | Pydantic | Retry (counts toward max_retries) | messages.validation_json |
-| Message fails validators | validators | Re-prompt with feedback ×2, then `NEEDS_REVIEW` | messages |
-| SMTP auth / send error | node/smtplib error | `FAILED` + error; retried up to 3 attempts | outreach + events |
-| Process crash mid-send | stale `SENDING` | Released after 10 min | events |
-| Bad config | pydantic-settings at startup | Fail fast with a clear message | stderr |
+| YouTube quota (ours or Google's) | `QuotaTracker` / `quotaExceeded` | Stage stops cleanly; run marked `PARTIAL`; re-run resumes | `runs` |
+| YouTube 429 / 5xx / network | status / httpx error | 4 attempts with exponential backoff; creator retried next run | `pipeline_errors` |
+| Malformed API item (e.g. premiere without duration) | `MalformedYouTubeData` | That creator fails; stage continues | `pipeline_errors` |
+| Hidden subscribers / likes | missing fields | Reason codes `SUBSCRIBERS_HIDDEN` / `ENGAGEMENT_UNAVAILABLE` | `filter_results` |
+| robots.txt disallow / unreachable / 4xx / non-HTML | robotparser / status | Site skipped; email stays `Not Found` | `contacts.notes` |
+| Email domain without mail server, or template domain | `email-validator` DNS / junk list | Candidate rejected with reason | `contacts.notes` |
+| LLM 429 / 503 / timeout | SDK error | Backoff ×3, circuit breaker, next model in chain | logs; `pipeline_errors` if all fail |
+| LLM invalid JSON or schema | Pydantic | Retried as a transient failure | — |
+| LLM omits a creator from a batch | id check | Creator recorded and retried next run | `pipeline_errors` |
+| Draft fails validators | `find_issues` | Rewrite with feedback ×2, then `NEEDS_REVIEW` | `outreach_messages.validation_issues` |
+| Reviewer submits an empty field | schema | Clear `ReviewError`; nothing saved | UI message |
+| SMTP auth / send error | smtplib / n8n error output | `FAILED` + error; retried up to 3 attempts | `outreach`, `outreach_events` |
+| Sender crash mid-batch | stale `SENDING` | Released after 10 minutes | `outreach_events` |
+| Duplicate result report | state check | 409 / `InvalidTransitionError` | — |
+| Ctrl+C or crash during a run | `BaseException` handler | Run marked `FAILED` with the cause; finished work kept | `runs` |
+| Missing secret | `require()` at point of use | Fails fast with the variable name and `docs/SETUP.md` pointer | stderr |
 
 ## 13. Testing Strategy
 
