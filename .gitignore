@@ -1,0 +1,30 @@
+# Secrets (matches config/.env and any .env at any depth)
+.env
+.env.*
+!.env.example
+
+# Personal, not part of the submission
+docs/code-rules
+docs/LEARNING.md
+AI_Engineer_Intern_Assignment_1*.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Runtime data (deliverable exports live in outputs/ and ARE committed)
+data/*
+!data/.gitkeep
+
+# n8n local state (workflows are exported to n8n/workflows/ instead)
+.n8n/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
