@@ -27,7 +27,9 @@ def build_funnel(session: Session, settings: Settings) -> list[FunnelStep]:
         FunnelStep("Discovered channels", len(creators)),
         FunnelStep("Within subscriber range", len(in_range)),
         FunnelStep("Recent videos fetched", sum(1 for c in in_range if c.videos_fetched_at)),
-        FunnelStep("Engagement rate computed", sum(1 for m in measured if m.engagement_rate)),
+        FunnelStep(
+            "Engagement rate computed", sum(1 for m in measured if m.engagement_rate is not None)
+        ),
     ]
 
 

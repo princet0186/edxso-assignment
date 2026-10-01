@@ -139,8 +139,9 @@ llm: { temperature_classify: 0.1, temperature_generate: 0.7, max_retries: 2, rpm
 
 | Table | Purpose | Key columns / constraints |
 |---|---|---|
-| `runs` | One row per pipeline run | `id`, `started_at`, `finished_at`, `status`, `config_hash`, `rules_version`, `stats_json`, `quota_used` |
-| `creators` | Canonical creator record | `id`, `platform`, `platform_id`, **UNIQUE(platform, platform_id)**, `handle`, `name`, `profile_url`, `country`, `subscriber_count`, `subscribers_hidden`, `video_count`, `description`, `discovered_via`, `first_seen_run`, `last_refreshed_at`, `stage` |
+| `runs` | One row per pipeline run | `id`, `started_at`, `finished_at`, `status`, `stages`, `stage_reports` (counts per stage), `youtube_quota_used`, `failure` |
+| `search_query_log` | Queries already searched, so re-runs never re-spend 100 units per query | `query` PK, `searched_at`, `channel_ids_found` |
+| `creators` | Canonical creator record | `id`, `platform`, `platform_id`, **UNIQUE(platform, platform_id)**, `handle`, `name`, `profile_url`, `country`, `subscriber_count`, `subscribers_hidden`, `video_count`, `description`, `uploads_playlist_id`, `topic_categories`, `discovered_via_query`, `first_seen_run_id`, `videos_fetched_at` |
 | `videos` | Recent uploads | `video_id` PK, `creator_id` FK, `title`, `description`, `published_at`, `duration_s`, `views`, `likes` (nullable = hidden), `comments` |
 | `metrics` | Derived metrics | `creator_id` PK, `er`, `er_method`, `sample_size`, `median_views`, `views_per_sub`, `last_upload_at`, `uploads_90d` |
 | `classifications` | LLM output | `creator_id` PK, `primary_niche`, `sub_niches`, `content_themes`, `tone`, `audience_level`, `language`, `relevance`, `brand_safety_flags`, `evidence`, `model`, `prompt_version` |
@@ -151,12 +152,13 @@ llm: { temperature_classify: 0.1, temperature_generate: 0.7, max_retries: 2, rpm
 | `outreach_events` | Append-only log | `id`, `outreach_id`, `ts`, `event`, `detail_json` |
 | `llm_cache` | Saves quota on re-runs | `key` = sha256(provider+model+prompt_version+input), `response_json`, `created_at` |
 | `jobs` | Async stage jobs for n8n | `id`, `stage`, `run_id`, `status`, `progress`, `error`, timestamps |
+| `pipeline_errors` | Per-creator failures that did not stop the run | `id`, `run_id`, `creator_id`, `stage`, `message`, `occurred_at` |
 
 Sentinel strings: `Not Found` is used for emails only (we searched and found nothing). `Not Available` is used for data the platform doesn't expose (demographics, hidden counts).
 
 ## 6. Pipeline Stages — Specifications
 
-Every stage is **idempotent** and **resumable**. It processes creators whose `stage` is behind it, records per-creator errors in `outreach_events`/`jobs`, and never stops the whole run because one creator failed (NFR-2).
+Every stage is **idempotent** and **resumable**. It selects only creators that are missing *its own output* (e.g. metrics processes creators with `videos_fetched_at` set and no `creator_metrics` row), commits after each unit of work, records per-creator failures in `pipeline_errors`, and never stops the whole run because one creator failed (NFR-2).
 
 ### 6.1 Discovery (`discovery.py`, FR-D1–D6)
 1. For each query, call `search.list` with `type=video`, `order=relevance`, `publishedAfter=now-90d`, `maxResults=50`, and collect `channelId`s. Searching *videos* instead of channels biases results toward creators who are active now.
@@ -180,7 +182,7 @@ Every stage is **idempotent** and **resumable**. It processes creators whose `st
 ### 6.2 Metrics (`metrics.py`)
 - **Sample:** the last 10 public uploads, excluding live/upcoming streams and videos under 48 hours old (their stats haven't settled). Long-form videos (> 180 s) are preferred; if fewer than 3 exist, all uploads are used and `er_method` is flagged `mixed_shorts`.
 - **Engagement rate (primary):** `ER = median over sample of (likes + comments) / views`. The median resists one viral outlier.
-- **Hidden likes:** if likes are hidden on more than half the sample, ER = `Not Available` and the creator fails rule `R_ER_UNAVAILABLE`. We never estimate it.
+- **Hidden likes:** ER is computed only over videos with visible likes. If fewer than `min_sample_videos` (3) have visible likes, ER = `Not Available` with the reason ("Likes hidden on 8/8 sampled videos") and the creator fails rule `R_ER_UNAVAILABLE`. We never estimate it.
 - **Secondary:** `views_per_sub = median_views / subscribers` (reach health), `uploads_90d`, `last_upload_at`.
 
 ### 6.3 Classification (`classify.py`, FR-F4)
@@ -383,7 +385,8 @@ outreach summary [--run-id]
 | Failure | Detection | Handling | Record |
 |---|---|---|---|
 | YouTube 403 quotaExceeded | HTTP status/reason | Stop discovery cleanly; run marked `PARTIAL` | `runs.status`, summary |
-| YouTube 5xx / timeout | httpx exception | 3 retries with backoff, then skip that batch | event + creator `stage` unchanged |
+| YouTube 5xx / timeout | httpx exception | 4 attempts with exponential backoff; then that creator is left unmarked and retried next run | `pipeline_errors` |
+| Malformed API item | `MalformedYouTubeData` | That creator is marked failed; the stage continues | `pipeline_errors` |
 | Hidden subscribers / likes | Missing fields | Reason codes `R_SUBS_HIDDEN` / `R_ER_UNAVAILABLE` | filter_results |
 | Website blocked / robots disallow / 4xx | robotparser / status | Skip the site; email stays `Not Found` | contacts.email_source_type=`blocked` |
 | LLM 429 / 5xx | status | Backoff, then the next provider in the chain | llm stats |

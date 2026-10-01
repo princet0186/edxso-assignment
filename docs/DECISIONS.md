@@ -113,6 +113,27 @@ Format: `D-<n> · <title> · <date> · Status`
 ### D-15 · Four delivery phases with exit criteria · 2026-10-01 · Accepted
 - **Decision:** The 8 EPS milestones are grouped into 4 phases ([PHASES.md](PHASES.md)): Foundation & Discovery → Intelligence → Personalization & Review → Delivery & Submission. Each phase must pass its exit criteria before the next starts. External setup is done just before the phase that needs it ([SETUP.md](SETUP.md)).
 
+### D-16 · Search ordering: `relevance`, chosen from measured yield · 2026-10-01 · Accepted
+- **Context:** Micro-influencers are a narrow band (5k–100k). YouTube search ordering decides which channels we even see.
+- **Experiment** (same query, "python tutorial for beginners", last 90 days):
+
+  | Order | Channels | 5k–100k | Mostly |
+  |---|---|---|---|
+  | `relevance` | 43 | ~17% | under 1k subscribers |
+  | `viewCount` | 35 | 14% (5/35) | over 100k (29/35) |
+
+- **Decision:** Keep `relevance` and widen coverage with 30 queries instead.
+- **Result (full run):** 1,049 channels discovered → **263 in range** → 236 with a real engagement rate. About 3,660 of the 10,000 daily quota units used.
+- **Consequence:** Out-of-range channels are stored but their videos are never fetched, so the 83% that miss the size band cost only 1 unit per 50 channels.
+
+### D-17 · Concrete LLM models: `gemini-3.5-flash` → Groq `openai/gpt-oss-120b` · 2026-10-01 · Accepted
+- **Context:** Model names change. On 2026-10-01 the keys were probed live with a JSON-mode request.
+- **Findings:**
+  - `gemini-flash-latest` returned **503 "high demand"**: a live example of why a fallback chain is needed.
+  - `gemini-3.5-flash` and `gemini-2.5-flash` returned valid JSON in about 2–3 s.
+  - Groq no longer serves Llama models. `openai/gpt-oss-120b` returned valid JSON in 0.6 s.
+- **Decision:** Primary `gemini-3.5-flash` (newest working Flash model, for writing quality); fallback Groq `openai/gpt-oss-120b`. Both are set in `config/.env` and can be changed without code changes.
+
 ---
 
 ## Sources (checked 2026-10-01)

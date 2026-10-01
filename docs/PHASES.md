@@ -20,24 +20,24 @@ The build is split into **4 phases**. Each phase ends with a working, demonstrab
 **Goal:** a reproducible project skeleton that pulls ≥ 200 real YouTube candidates with computed metrics into SQLite.
 
 ### Tasks
-- [ ] `pyproject.toml` (Python 3.12 pinned through uv), dependencies, ruff/pytest config
-- [ ] `config.py`: `.env` plus `settings.yaml` loading with pydantic-settings; fails fast on a missing key
-- [ ] `config/settings.yaml`: niche, ~30 discovery queries, thresholds, weights (EPS §4)
-- [ ] `models.py` + `db.py`: all tables from EPS §5 with their UNIQUE constraints; `outreach init-db`
-- [ ] `sources/youtube.py`: REST client, `QuotaTracker`, retries/backoff, quota-exceeded handling
-- [ ] `discovery.py`: search → dedupe → `channels.list` → subscriber pre-filter → uploads → `videos.list` (EPS §6.1)
-- [ ] `metrics.py`: ER (median, hidden likes, shorts fallback), views/sub, activity (EPS §6.2)
-- [ ] `cli.py`: `init-db`, `run --stages discover,metrics`, `summary`
-- [ ] Recorded YouTube JSON fixtures in `tests/fixtures/`; unit tests for ER and quota accounting
+- [x] `pyproject.toml` (Python 3.12 pinned through uv), dependencies, ruff/pytest config
+- [x] `config.py`: `.env` plus `settings.yaml` loading with pydantic-settings; fails fast on a missing key
+- [x] `config/settings.yaml`: niche, ~30 discovery queries, thresholds, weights (EPS §4)
+- [x] `models.py` + `db.py`: all tables from EPS §5 with their UNIQUE constraints; `outreach init-db`
+- [x] `sources/youtube.py`: REST client, `QuotaTracker`, retries/backoff, quota-exceeded handling
+- [x] `discovery.py`: search → dedupe → `channels.list` → subscriber pre-filter → uploads → `videos.list` (EPS §6.1)
+- [x] `metrics.py`: ER (median, hidden likes, shorts fallback), views/sub, activity (EPS §6.2)
+- [x] `cli.py`: `init-db`, `run --stages discover,metrics`, `summary`
+- [x] Recorded YouTube JSON fixtures in `tests/fixtures/`; unit tests for ER and quota accounting
 
 ### Deliverables
 Working `outreach run --stages discover,metrics`, a populated `data/outreach.db`, and the run summary with the quota used.
 
 ### Exit criteria
-- [ ] ≥ 200 unique candidate channels in `creators`
-- [ ] Every channel inside the subscriber range has metrics or an explicit reason why not
-- [ ] Re-running adds no duplicates and stays within the quota budget
-- [ ] `pytest` passes offline
+- [x] ≥ 200 unique candidate channels in `creators`
+- [x] Every channel inside the subscriber range has metrics or an explicit reason why not
+- [x] Re-running adds no duplicates and stays within the quota budget
+- [x] `pytest` passes offline
 
 ### Decisions expected
 Exact keyword list; long-form vs. Shorts cut-off; quota ceiling.
@@ -137,7 +137,7 @@ Send throttle and batch size; what goes in the demo video.
 
 | Phase | Status | Started | Completed | Notes |
 |---|---|---|---|---|
-| 1 | Not started | | | Waiting on `uv` + YouTube key |
+| 1 | **Done** | 2026-10-01 | 2026-10-01 | 1,049 channels → 263 in range → 236 with real ER; 0 errors; 24 tests |
 | 2 | Not started | | | |
 | 3 | Not started | | | |
 | 4 | Not started | | | |
