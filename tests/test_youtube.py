@@ -7,6 +7,7 @@ import pytest
 
 from outreach.sources.youtube import (
     API_BASE_URL,
+    MalformedYouTubeData,
     QuotaBudgetExceeded,
     QuotaTracker,
     VideoSearch,
@@ -67,6 +68,33 @@ def test_fetch_videos_keeps_hidden_likes_as_none_not_zero() -> None:
     assert long_video.duration_seconds == 1205
     assert long_video.like_count == 600
     assert short_video.like_count is None
+
+
+def test_upcoming_premiere_without_duration_parses_as_zero_seconds() -> None:
+    premiere = {
+        "id": "premiere",
+        "snippet": {
+            "channelId": "UC1",
+            "title": "Coming soon",
+            "publishedAt": "2026-10-05T10:00:00Z",
+            "liveBroadcastContent": "upcoming",
+        },
+        "contentDetails": {},
+    }
+    client, _ = client_returning(lambda request: httpx.Response(200, json={"items": [premiere]}))
+
+    (video,) = client.fetch_videos(["premiere"])
+
+    assert video.duration_seconds == 0
+    assert video.live_status == "upcoming"
+
+
+def test_malformed_video_raises_a_creator_level_error() -> None:
+    broken = {"id": "broken", "snippet": {"title": "no channel id"}}
+    client, _ = client_returning(lambda request: httpx.Response(200, json={"items": [broken]}))
+
+    with pytest.raises(MalformedYouTubeData):
+        client.fetch_videos(["broken"])
 
 
 def test_search_costs_100_units_and_sends_key_as_header() -> None:

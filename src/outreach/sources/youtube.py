@@ -20,6 +20,7 @@ UNIT_COST_BY_ENDPOINT = {"search": 100, "channels": 1, "playlistItems": 1, "vide
 QUOTA_EXHAUSTED_REASONS = {"quotaExceeded", "dailyLimitExceeded"}
 TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
 
+NO_DURATION = "P0D"
 ISO_DURATION_PATTERN = re.compile(
     r"^P(?:(?P<days>\d+)D)?(?:T(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+)S)?)?$"
 )
@@ -34,6 +35,13 @@ class YouTubeApiError(RuntimeError):
 
 class TransientYouTubeError(YouTubeApiError):
     """Worth retrying: rate limits, server errors, network failures."""
+
+
+class MalformedYouTubeData(YouTubeApiError):
+    """An item did not have the shape the API documents. Fails that creator, not the stage."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(0, "malformed", message)
 
 
 class QuotaBudgetExceeded(RuntimeError):
@@ -154,21 +162,26 @@ def parse_channel(item: dict[str, Any]) -> ChannelSnapshot:
 
 
 def parse_video(item: dict[str, Any]) -> VideoSnapshot:
-    snippet = item["snippet"]
-    statistics = item.get("statistics", {})
-    # A missing likeCount means the creator hid likes; it is NOT zero, so it stays None.
-    return VideoSnapshot(
-        video_id=item["id"],
-        channel_id=snippet["channelId"],
-        title=snippet.get("title", ""),
-        description=snippet.get("description", ""),
-        published_at=_parse_timestamp(snippet["publishedAt"]),
-        duration_seconds=parse_iso8601_duration(item["contentDetails"]["duration"]),
-        view_count=_optional_int(statistics.get("viewCount")),
-        like_count=_optional_int(statistics.get("likeCount")),
-        comment_count=_optional_int(statistics.get("commentCount")),
-        live_status=snippet.get("liveBroadcastContent", "none"),
-    )
+    try:
+        snippet = item["snippet"]
+        statistics = item.get("statistics", {})
+        # Upcoming premieres have no duration yet; they are excluded from metrics anyway.
+        duration = item.get("contentDetails", {}).get("duration", NO_DURATION)
+        # A missing likeCount means the creator hid likes; it is NOT zero, so it stays None.
+        return VideoSnapshot(
+            video_id=item["id"],
+            channel_id=snippet["channelId"],
+            title=snippet.get("title", ""),
+            description=snippet.get("description", ""),
+            published_at=_parse_timestamp(snippet["publishedAt"]),
+            duration_seconds=parse_iso8601_duration(duration),
+            view_count=_optional_int(statistics.get("viewCount")),
+            like_count=_optional_int(statistics.get("likeCount")),
+            comment_count=_optional_int(statistics.get("commentCount")),
+            live_status=snippet.get("liveBroadcastContent", "none"),
+        )
+    except (KeyError, ValueError) as exc:
+        raise MalformedYouTubeData(f"video {item.get('id')}: {exc!r}") from exc
 
 
 def _error_from_response(response: httpx.Response) -> Exception:
