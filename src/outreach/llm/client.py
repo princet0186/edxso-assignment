@@ -8,6 +8,7 @@ the next provider before giving up. Successful answers are cached in the databas
 import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -22,6 +23,10 @@ from outreach.llm.cache import LlmCache
 from outreach.llm.types import LlmRequest, LlmResult
 
 ATTEMPTS_PER_PROVIDER = 3
+# A provider failing this many requests in a row is skipped for the cooldown, so an overloaded
+# primary costs one fast fallback per request instead of three slow retries.
+CIRCUIT_FAILURE_THRESHOLD = 2
+CIRCUIT_COOLDOWN_SECONDS = 300
 DEFAULT_BACKOFF = wait_exponential(multiplier=2, max=30)
 SECONDS_PER_MINUTE = 60
 JSON_RESPONSE_FORMAT = {"type": "json_object"}
@@ -93,6 +98,29 @@ class OpenAICompatibleBackend:
         self._last_call_at = time.monotonic()
 
 
+class CircuitBreaker:
+    def __init__(
+        self, failure_threshold: int, cooldown_seconds: float, clock: Callable[[], float]
+    ) -> None:
+        self._failure_threshold = failure_threshold
+        self._cooldown_seconds = cooldown_seconds
+        self._clock = clock
+        self._consecutive_failures = 0
+        self._open_until = 0.0
+
+    def is_open(self) -> bool:
+        return self._clock() < self._open_until
+
+    def record_success(self) -> None:
+        self._consecutive_failures = 0
+        self._open_until = 0.0
+
+    def record_failure(self) -> None:
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self._failure_threshold:
+            self._open_until = self._clock() + self._cooldown_seconds
+
+
 def parse_json_output[T: BaseModel](text: str, schema: type[T]) -> T:
     """Accepts plain JSON or JSON wrapped in prose/code fences, then validates the schema."""
     start, end = text.find("{"), text.rfind("}")
@@ -110,12 +138,17 @@ class LlmClient:
         backends: list[CompletionBackend],
         cache: LlmCache,
         backoff: wait_base = DEFAULT_BACKOFF,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if not backends:
             raise MissingConfigError("No LLM provider is configured (see docs/SETUP.md)")
         self._backends = backends
         self._cache = cache
         self._backoff = backoff
+        self._breakers = {
+            backend.name: CircuitBreaker(CIRCUIT_FAILURE_THRESHOLD, CIRCUIT_COOLDOWN_SECONDS, clock)
+            for backend in backends
+        }
 
     def complete_json[T: BaseModel](self, request: LlmRequest, schema: type[T]) -> LlmResult[T]:
         cache_key = self._cache.key_for(request)
@@ -128,16 +161,24 @@ class LlmClient:
                 logger.info("Ignoring cached response that no longer matches the schema")
 
         failures: list[str] = []
-        for backend in self._backends:
+        for backend in self._backends_to_try():
+            breaker = self._breakers[backend.name]
             try:
                 text, value = self._complete_with_retries(backend, request, schema)
             except (*RETRYABLE_ERRORS, openai.APIStatusError) as exc:
+                breaker.record_failure()
                 failures.append(f"{backend.name}: {type(exc).__name__}: {str(exc)[:200]}")
                 logger.warning("LLM provider %s failed; trying next. %s", backend.name, exc)
                 continue
+            breaker.record_success()
             self._cache.put(cache_key, text, backend.name, backend.model)
             return LlmResult(value, backend.name, backend.model, from_cache=False)
         raise LlmUnavailableError(" | ".join(failures))
+
+    def _backends_to_try(self) -> list[CompletionBackend]:
+        healthy = [b for b in self._backends if not self._breakers[b.name].is_open()]
+        # If every circuit is open, trying them all beats failing without an attempt.
+        return healthy or self._backends
 
     def _complete_with_retries[T: BaseModel](
         self, backend: CompletionBackend, request: LlmRequest, schema: type[T]

@@ -89,3 +89,26 @@ def test_raises_when_every_provider_fails(session: Session) -> None:
 def test_parse_json_output_rejects_schema_mismatch() -> None:
     with pytest.raises(ValueError):
         parse_json_output('{"unexpected": 1}', Answer)
+
+
+def test_failing_primary_is_skipped_during_cooldown_then_retried(session: Session) -> None:
+    now = [0.0]
+    primary = ScriptedBackend("gemini", [rate_limit_error()])
+    fallback = ScriptedBackend("groq", ['{"niche": "EdTech"}'])
+    client = LlmClient(
+        [primary, fallback], LlmCache(session), backoff=wait_none(), clock=lambda: now[0]
+    )
+
+    def ask(prompt: str) -> str:
+        request = LlmRequest((ChatMessage(Role.USER, prompt),), 0.1, "test_v1")
+        return client.complete_json(request, Answer).provider
+
+    ask("first")
+    ask("second")  # second consecutive failure opens the circuit
+    calls_when_opened = primary.calls
+    assert ask("third") == "groq"
+    assert primary.calls == calls_when_opened  # skipped, no wasted retries
+
+    now[0] += 301  # cooldown over: primary is tried again
+    ask("fourth")
+    assert primary.calls > calls_when_opened
