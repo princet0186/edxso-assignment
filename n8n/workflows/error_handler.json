@@ -1,0 +1,110 @@
+{
+  "name": "Outreach · error_handler",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF3 · Error handler\nSet as the Error Workflow of WF1 and WF2 (Workflow settings → Error workflow). Records any failure in the pipeline_errors table.",
+        "height": 260,
+        "width": 420
+      },
+      "id": "cd5ab8aa-e9c4-40ff-a6fd-ff322a008c1e",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        -260
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "0773e669-e767-4a70-a599-ad8b454f0461",
+      "name": "On workflow error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2b0bb180-d6c4-484c-9089-0382f8193749",
+              "name": "apiBaseUrl",
+              "value": "http://localhost:8000",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "eeafc7ad-ac85-4fb6-a32b-d4c25ac970be",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/events/workflow-error",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: $('On workflow error').first().json.workflow.name, node: $('On workflow error').first().json.execution.lastNodeExecuted || '', message: ($('On workflow error').first().json.execution.error || {}).message || 'unknown' }) }}"
+      },
+      "id": "8e43b775-4afc-454c-b3c4-67ef9054a9bb",
+      "name": "Record workflow error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "outreach-api-key",
+          "name": "Outreach API key"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "On workflow error": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Record workflow error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

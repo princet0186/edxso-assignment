@@ -1,0 +1,456 @@
+{
+  "name": "Outreach · pipeline_run",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF1 · Pipeline run\nStarts a run, then for each stage: start it as an API job, poll every 10 s until it finishes, stop on failure. Ends by closing the run and fetching the funnel summary.\n\nAll business logic lives in the Python API; this workflow only orchestrates.",
+        "height": 260,
+        "width": 420
+      },
+      "id": "6f11eb3d-5699-4b5c-afab-e0e0268e1c7f",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        -260
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c0ce7833-1063-43c1-b32f-a43e78645217",
+      "name": "Run pipeline",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fde53d0e-c42f-4a8e-ade6-58c581b04ff2",
+              "name": "apiBaseUrl",
+              "value": "http://localhost:8000",
+              "type": "string"
+            },
+            {
+              "id": "e6745c22-93a6-400a-98e7-9f6293667c41",
+              "name": "stages",
+              "value": "={{ [\"discover\", \"metrics\", \"classify\", \"filter\", \"enrich\", \"generate\", \"export\"] }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e238b72d-7ced-41e3-9d9a-ac2919783ff9",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/runs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ stages: $('Config').first().json.stages }) }}"
+      },
+      "id": "d244b346-2b09-4bb6-a9b0-b696daccf56a",
+      "name": "Start run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "outreach-api-key",
+          "name": "Outreach API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const runId = $('Start run').first().json.run_id;\nreturn $('Config').first().json.stages.map(stage => ({ json: { stage, run_id: runId } }));"
+      },
+      "id": "43fb4fe7-e0a0-418a-99fe-a90a8c22a5da",
+      "name": "One item per stage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "6297c782-6d1a-41b2-ab82-437e25b62ae5",
+      "name": "Each stage",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/runs/{{ $json.run_id }}/stages/{{ $json.stage }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "99a28d13-1399-40df-8dbc-caf61c95d59a",
+      "name": "Start stage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "outreach-api-key",
+          "name": "Outreach API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "id": "9973a827-8fcf-40b5-9ec2-7e1bc8460ae8",
+      "name": "Wait 10s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        120
+      ],
+      "webhookId": "e96d6729-af02-4299-89a4-ff65790d7b7a"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/jobs/{{ $('Start stage').last().json.job_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "67f30288-7010-4130-9a69-5f793907b4e5",
+      "name": "Check job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "outreach-api-key",
+          "name": "Outreach API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "9a7f05f9-f09f-4d71-ad01-bf438b60c126",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "QUEUED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "580eb8b1-f5ba-4b80-a941-f60e074ead82",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "RUNNING",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "a5d4e285-7dc0-4807-b29f-dba074c224b3",
+      "name": "Still running?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "3417774c-27d6-466a-af20-beb714018a9e",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "SUCCEEDED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8e89edf8-ab4b-4dd6-ade6-2ec8c5505fdb",
+      "name": "Succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'Stage ' + $json.stage + ' failed: ' + $json.error }}"
+      },
+      "id": "534d0ed3-7e41-4762-83c8-6e6aa9fea54d",
+      "name": "Stop: stage failed",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/runs/{{ $('Start run').first().json.run_id }}/finish",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "c4a2360e-8c99-40d3-8a18-7609d344087a",
+      "name": "Finish run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        -140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "outreach-api-key",
+          "name": "Outreach API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/summary",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "5ee0cf7e-2b56-416d-b0a8-9d40b2ccb79a",
+      "name": "Funnel summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        -140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "outreach-api-key",
+          "name": "Outreach API key"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Run pipeline": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Start run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start run": {
+      "main": [
+        [
+          {
+            "node": "One item per stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per stage": {
+      "main": [
+        [
+          {
+            "node": "Each stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Each stage": {
+      "main": [
+        [
+          {
+            "node": "Finish run",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Start stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start stage": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 10s": {
+      "main": [
+        [
+          {
+            "node": "Check job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check job": {
+      "main": [
+        [
+          {
+            "node": "Still running?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still running?": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Each stage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop: stage failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finish run": {
+      "main": [
+        [
+          {
+            "node": "Funnel summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

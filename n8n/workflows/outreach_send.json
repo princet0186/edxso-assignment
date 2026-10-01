@@ -1,0 +1,335 @@
+{
+  "name": "Outreach · outreach_send",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF2 · Outreach send\nEvery 5 min (or on demand): claim up to 10 approved emails. The API decides the route from SEND_MODE: `simulate` (DRY_RUN) or a real SMTP send (REDIRECT to the test inbox / LIVE allowlist). Every outcome is reported back.\n\nDuplicate prevention is enforced by the database, not by this workflow.",
+        "height": 260,
+        "width": 420
+      },
+      "id": "a280442d-2582-42e7-adc1-25c4beb08d83",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "85993ec7-c43f-4310-9e10-7e82504e8c3e",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -100
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c2650ce8-443d-4170-a97f-c080cbfdb073",
+      "name": "Send now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8d3787e2-6d16-4c81-b817-784586ff4d2c",
+              "name": "apiBaseUrl",
+              "value": "http://localhost:8000",
+              "type": "string"
+            },
+            {
+              "id": "46ff0852-b4fd-43fb-8542-f925be9ab058",
+              "name": "batchSize",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "5843dafe-1f8c-49d8-888b-1d6c790229ca",
+              "name": "fromEmail",
+              "value": "SkillSprint Partnerships <your-sender@gmail.com>",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "93f54127-b8ef-4623-8e62-ee1a26395beb",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/outreach/claim?limit={{ $('Config').first().json.batchSize }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "1cddd0b2-6090-49bc-8bd1-b6d8f7337962",
+      "name": "Claim batch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "outreach-api-key",
+          "name": "Outreach API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "d0e346dc-a1f1-4dd3-974b-4b5ae2410fa8",
+              "leftValue": "={{ $json.method }}",
+              "rightValue": "simulate",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0a16b8d6-b159-4ecf-9fa3-a9e8370d1f4b",
+      "name": "Simulate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/outreach/{{ $json.outreach_id }}/result",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'SIMULATED', provider_message_id: 'n8n-simulated:' + $json.idempotency_key }) }}"
+      },
+      "id": "c0886419-6d90-4ab8-a401-b8b6bf445918",
+      "name": "Report simulated",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        -140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "outreach-api-key",
+          "name": "Outreach API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Config').first().json.fromEmail }}",
+        "toEmail": "={{ $json.deliver_to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.body }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "1f793d0c-e237-403a-951b-5fe4dd7eeed2",
+      "name": "Send via Gmail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        900,
+        100
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "gmail-smtp",
+          "name": "Gmail SMTP"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "webhookId": "0213e42e-d840-4ff2-9507-c46584e39da5"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/outreach/{{ $('Simulate?').item.json.outreach_id }}/result",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'SENT', provider_message_id: $json.messageId }) }}"
+      },
+      "id": "bb310bdc-02e8-4df5-bde4-248097fe9c24",
+      "name": "Report sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        20
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "outreach-api-key",
+          "name": "Outreach API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/outreach/{{ $('Simulate?').item.json.outreach_id }}/result",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'FAILED', error: ($json.error && $json.error.message) || 'SMTP error' }) }}"
+      },
+      "id": "4539a54c-95d4-4931-ab9e-cc39682cca03",
+      "name": "Report failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "outreach-api-key",
+          "name": "Outreach API key"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send now": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Claim batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim batch": {
+      "main": [
+        [
+          {
+            "node": "Simulate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simulate?": {
+      "main": [
+        [
+          {
+            "node": "Report simulated",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send via Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via Gmail": {
+      "main": [
+        [
+          {
+            "node": "Report sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}
