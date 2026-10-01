@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Engine, func
 from sqlmodel import Session, select
 
+from outreach.classify import classify_creators
 from outreach.config import Settings, load_secrets, load_settings
 from outreach.discovery import discover_creators
 from outreach.metrics import compute_metrics
@@ -27,11 +28,13 @@ class Stage(StrEnum):
 
     DISCOVER = "discover"
     METRICS = "metrics"
+    CLASSIFY = "classify"
 
 
 STAGE_HANDLERS: dict[Stage, StageHandler] = {
     Stage.DISCOVER: discover_creators,
     Stage.METRICS: compute_metrics,
+    Stage.CLASSIFY: classify_creators,
 }
 
 

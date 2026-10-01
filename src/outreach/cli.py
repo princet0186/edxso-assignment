@@ -16,6 +16,8 @@ from outreach.reporting import build_funnel, error_count, recent_runs
 
 ALL_STAGES = "all"
 RECENT_RUNS_SHOWN = 5
+# HTTP client libraries log every request at INFO; that drowns out pipeline progress.
+NOISY_HTTP_LOGGERS = ("httpx", "httpx2", "openai")
 
 app = typer.Typer(no_args_is_help=True, help="Micro-influencer discovery and outreach pipeline.")
 console = Console()
@@ -30,7 +32,8 @@ def configure_logging(
         format="%(message)s",
         handlers=[RichHandler(console=console, show_path=False)],
     )
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    for noisy_logger in NOISY_HTTP_LOGGERS:
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
 
 @app.command("init-db")
