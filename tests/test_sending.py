@@ -20,6 +20,7 @@ from outreach.sending.queue import (
     DeliveryResult,
     InvalidTransitionError,
     claim_emails,
+    clear_simulated,
     queue_approved_emails,
     record_result,
     release_stale_claims,
@@ -172,3 +173,16 @@ def test_dm_can_be_marked_sent_once_and_needs_an_instagram_handle(session: Sessi
     (row,) = outreach_rows(session)
     assert row.channel == OutreachChannel.INSTAGRAM_DM
     assert row.status == DeliveryStatus.MANUAL_SENT
+
+
+def test_clearing_simulations_never_touches_real_sends(session: Session) -> None:
+    seed_creator(session, "A", "a@asha.dev")
+    seed_creator(session, "B", "b@asha.dev")
+    first, second = claim_emails(session, SETTINGS, secrets(SendMode.DRY_RUN), BRAND, limit=10)
+    record_result(session, first.outreach_id, DeliveryResult(DeliveryStatus.SIMULATED))
+    record_result(session, second.outreach_id, DeliveryResult(DeliveryStatus.SENT))
+
+    assert clear_simulated(session, CAMPAIGN) == 1
+    (remaining,) = outreach_rows(session)
+    assert remaining.status == DeliveryStatus.SENT
+    assert queue_approved_emails(session, CAMPAIGN) == 1  # the simulated one can be re-run

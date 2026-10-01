@@ -18,6 +18,7 @@ from outreach.personalize.review import approve_all_valid
 from outreach.pipeline import Stage, run_pipeline
 from outreach.reporting import build_funnel, error_count, recent_runs
 from outreach.sending.dispatch import send_queued_emails
+from outreach.sending.queue import clear_simulated
 from outreach.sending.smtp import SmtpMailer
 
 ALL_STAGES = "all"
@@ -150,6 +151,17 @@ def send() -> None:
             for status, count in outcomes.items():
                 totals[status] = totals.get(status, 0) + count
     console.print(f"Delivery outcomes: {totals or 'nothing to send'}")
+
+
+@app.command("clear-simulated")
+def clear_simulated_sends() -> None:
+    """Delete DRY_RUN (simulated) deliveries so a demo can be re-run in REDIRECT mode.
+
+    Real SENT deliveries are never removed.
+    """
+    with Session(get_engine()) as session:
+        removed = clear_simulated(session, load_settings().campaign_id)
+    console.print(f"Removed {removed} simulated deliveries.")
 
 
 @app.command()

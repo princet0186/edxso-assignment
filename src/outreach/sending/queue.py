@@ -212,6 +212,27 @@ def _prepare(
     )
 
 
+def clear_simulated(session: Session, campaign_id: str) -> int:
+    """Removes SIMULATED deliveries (and their events) so the same creators can be re-run in
+    another mode for a demo. A simulation contacted nobody, so this cannot cause duplicate
+    outreach; real SENT rows are never touched."""
+    simulated = session.exec(
+        select(Outreach).where(
+            Outreach.campaign_id == campaign_id, Outreach.status == DeliveryStatus.SIMULATED
+        )
+    ).all()
+    for outreach in simulated:
+        events = session.exec(
+            select(OutreachEvent).where(OutreachEvent.outreach_id == outreach.id)
+        ).all()
+        for event in events:
+            session.delete(event)
+        session.flush()  # children first: the foreign key forbids orphaned events
+        session.delete(outreach)
+    session.commit()
+    return len(simulated)
+
+
 def record_result(session: Session, outreach_id: int, result: DeliveryResult) -> Outreach:
     outreach = session.get(Outreach, outreach_id)
     if outreach is None:
