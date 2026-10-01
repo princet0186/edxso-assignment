@@ -27,6 +27,9 @@ ATTEMPTS_PER_PROVIDER = 3
 # primary costs one fast fallback per request instead of three slow retries.
 CIRCUIT_FAILURE_THRESHOLD = 2
 CIRCUIT_COOLDOWN_SECONDS = 300
+# Each further failure doubles the cooldown, so a model whose daily quota is spent stops being
+# re-probed every few minutes; capped so it is still retried within the hour.
+CIRCUIT_MAX_COOLDOWN_SECONDS = 3600
 DEFAULT_BACKOFF = wait_exponential(multiplier=2, max=30)
 SECONDS_PER_MINUTE = 60
 JSON_RESPONSE_FORMAT = {"type": "json_object"}
@@ -104,10 +107,15 @@ def _backend_key(backend: CompletionBackend) -> str:
 
 class CircuitBreaker:
     def __init__(
-        self, failure_threshold: int, cooldown_seconds: float, clock: Callable[[], float]
+        self,
+        failure_threshold: int,
+        cooldown_seconds: float,
+        clock: Callable[[], float],
+        max_cooldown_seconds: float = CIRCUIT_MAX_COOLDOWN_SECONDS,
     ) -> None:
         self._failure_threshold = failure_threshold
         self._cooldown_seconds = cooldown_seconds
+        self._max_cooldown_seconds = max_cooldown_seconds
         self._clock = clock
         self._consecutive_failures = 0
         self._open_until = 0.0
@@ -121,8 +129,11 @@ class CircuitBreaker:
 
     def record_failure(self) -> None:
         self._consecutive_failures += 1
-        if self._consecutive_failures >= self._failure_threshold:
-            self._open_until = self._clock() + self._cooldown_seconds
+        failures_past_threshold = self._consecutive_failures - self._failure_threshold
+        if failures_past_threshold < 0:
+            return
+        cooldown = self._cooldown_seconds * 2**failures_past_threshold
+        self._open_until = self._clock() + min(cooldown, self._max_cooldown_seconds)
 
 
 def parse_json_output[T: BaseModel](text: str, schema: type[T]) -> T:

@@ -8,6 +8,7 @@ from tenacity import wait_none
 from outreach.config import Secrets, load_settings
 from outreach.llm.cache import LlmCache
 from outreach.llm.client import (
+    CircuitBreaker,
     LlmClient,
     LlmUnavailableError,
     build_llm_client,
@@ -136,3 +137,26 @@ def test_each_configured_model_becomes_its_own_fallback_step(session: Session) -
         ("gemini", "gemini-3.1-flash-lite"),
         ("groq", "openai/gpt-oss-120b"),
     ]
+
+
+def test_breaker_cooldown_doubles_on_repeated_failure_and_is_capped() -> None:
+    now = [0.0]
+    breaker = CircuitBreaker(2, 300, clock=lambda: now[0], max_cooldown_seconds=1000)
+
+    breaker.record_failure()
+    assert not breaker.is_open()
+    breaker.record_failure()  # opens for 300 s
+    now[0] = 299
+    assert breaker.is_open()
+    now[0] = 301
+    breaker.record_failure()  # still failing after cooldown: 600 s
+    now[0] = 301 + 599
+    assert breaker.is_open()
+    now[0] = 301 + 601
+    breaker.record_failure()  # 1200 s, capped at 1000
+    now[0] += 1001
+    assert not breaker.is_open()
+
+    breaker.record_success()
+    breaker.record_failure()
+    assert not breaker.is_open()  # counter reset by the success
