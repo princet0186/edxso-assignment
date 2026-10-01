@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": "vid_long",
+      "snippet": {"channelId": "UC_visible", "title": "Binary Search in 20 Minutes", "description": "Full walkthrough.", "publishedAt": "2026-09-20T10:00:00Z", "liveBroadcastContent": "none"},
+      "statistics": {"viewCount": "12000", "likeCount": "600", "commentCount": "45"},
+      "contentDetails": {"duration": "PT20M5S"}
+    },
+    {
+      "id": "vid_hidden_likes",
+      "snippet": {"channelId": "UC_visible", "title": "Short tip", "publishedAt": "2026-09-25T10:00:00Z"},
+      "statistics": {"viewCount": "3000", "commentCount": "2"},
+      "contentDetails": {"duration": "PT45S"}
+    }
+  ]
+}

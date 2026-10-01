@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "id": "UC_visible",
+      "snippet": {
+        "title": "Code With Asha",
+        "description": "Python and DSA tutorials. Business: asha.codes [at] gmail [dot] com",
+        "customUrl": "@codewithasha",
+        "country": "IN"
+      },
+      "statistics": {"subscriberCount": "48200", "videoCount": "212", "viewCount": "3100000", "hiddenSubscriberCount": false},
+      "contentDetails": {"relatedPlaylists": {"uploads": "UU_visible"}},
+      "topicDetails": {"topicCategories": ["https://en.wikipedia.org/wiki/Technology", "https://en.wikipedia.org/wiki/Knowledge"]}
+    },
+    {
+      "id": "UC_hidden",
+      "snippet": {"title": "Quiet Dev", "description": ""},
+      "statistics": {"videoCount": "40", "viewCount": "90000", "hiddenSubscriberCount": true},
+      "contentDetails": {"relatedPlaylists": {"uploads": "UU_hidden"}}
+    }
+  ]
+}
