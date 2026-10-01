@@ -204,6 +204,7 @@ class FilterResult(SQLModel, table=True):
     status: QualificationStatus
     reasons: list[dict[str, str]] = Field(default_factory=list, sa_column=json_column())
     score: float | None = None
+    score_breakdown: dict[str, float] = Field(default_factory=dict, sa_column=json_column())
     rules_version: str
     evaluated_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
 

@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 from outreach.classify import classify_creators
 from outreach.config import Settings, load_secrets, load_settings
 from outreach.discovery import discover_creators
+from outreach.filtering.stage import qualify_creators
 from outreach.metrics import compute_metrics
 from outreach.models import PipelineRun, RunStatus, utc_now
 from outreach.sources.youtube import QuotaBudgetExceeded, QuotaTracker
@@ -29,12 +30,14 @@ class Stage(StrEnum):
     DISCOVER = "discover"
     METRICS = "metrics"
     CLASSIFY = "classify"
+    FILTER = "filter"
 
 
 STAGE_HANDLERS: dict[Stage, StageHandler] = {
     Stage.DISCOVER: discover_creators,
     Stage.METRICS: compute_metrics,
     Stage.CLASSIFY: classify_creators,
+    Stage.FILTER: qualify_creators,
 }
 
 
