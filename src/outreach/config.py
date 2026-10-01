@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +17,7 @@ CONFIG_DIR = PROJECT_ROOT / "config"
 ENV_FILE = CONFIG_DIR / ".env"
 SETTINGS_FILE = CONFIG_DIR / "settings.yaml"
 DEFAULT_DATABASE_URL = "sqlite:///data/outreach.db"
+MAX_SCORE = 100
 
 
 class MissingConfigError(RuntimeError):
@@ -117,6 +118,43 @@ class FilterSettings(FrozenModel):
         return self.subscribers_min <= subscriber_count <= self.subscribers_max
 
 
+class LlmSettings(FrozenModel):
+    classify_temperature: float = Field(ge=0, le=2)
+    classify_batch_size: int = Field(gt=0)
+    request_timeout_seconds: float = Field(gt=0)
+    requests_per_minute: dict[str, int]
+
+
+class ScoringWeights(FrozenModel):
+    relevance: float = Field(ge=0)
+    engagement: float = Field(ge=0)
+    size_fit: float = Field(ge=0)
+    activity: float = Field(ge=0)
+    contactability: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def weights_sum_to_100(self) -> "ScoringWeights":
+        total = self.relevance + self.engagement + self.size_fit + self.activity
+        if total + self.contactability != MAX_SCORE:
+            raise ValueError(f"Scoring weights must sum to {MAX_SCORE}")
+        return self
+
+
+class ScoringSettings(FrozenModel):
+    weights: ScoringWeights
+    engagement_rate_for_full_marks: float = Field(gt=0)
+    size_sweet_spot_min: int = Field(gt=0)
+    size_sweet_spot_max: int = Field(gt=0)
+    uploads_for_full_activity: int = Field(gt=0)
+
+
+class EnrichmentSettings(FrozenModel):
+    max_pages_per_site: int = Field(gt=0)
+    request_timeout_seconds: float = Field(gt=0)
+    seconds_between_requests_per_domain: float = Field(ge=0)
+    user_agent: str
+
+
 class Settings(FrozenModel):
     campaign_id: str
     rules_version: str
@@ -125,6 +163,9 @@ class Settings(FrozenModel):
     youtube: YouTubeSettings
     metrics: MetricsSettings
     filters: FilterSettings
+    llm: LlmSettings
+    scoring: ScoringSettings
+    enrichment: EnrichmentSettings
 
 
 @lru_cache

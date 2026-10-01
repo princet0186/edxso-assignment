@@ -62,6 +62,27 @@ class EngagementMethod(StrEnum):
     UNAVAILABLE = "UNAVAILABLE"
 
 
+class QualificationStatus(StrEnum):
+    QUALIFIED = "QUALIFIED"
+    REJECTED = "REJECTED"
+
+
+class EmailStatus(StrEnum):
+    FOUND = "FOUND"
+    NOT_FOUND = "NOT_FOUND"
+
+
+class EmailSource(StrEnum):
+    CHANNEL_DESCRIPTION = "CHANNEL_DESCRIPTION"
+    VIDEO_DESCRIPTION = "VIDEO_DESCRIPTION"
+    WEBSITE = "WEBSITE"
+    NONE = "NONE"
+
+
+EMAIL_NOT_FOUND = "Not Found"
+NOT_AVAILABLE = "Not Available"
+
+
 class PipelineRun(SQLModel, table=True):
     __tablename__ = "runs"
 
@@ -151,3 +172,66 @@ class PipelineError(SQLModel, table=True):
     stage: str
     message: str
     occurred_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
+
+
+class Classification(SQLModel, table=True):
+    """LLM-derived niche and content context. Provider, model and prompt version are kept so
+    every label can be traced back to exactly what produced it."""
+
+    __tablename__ = "classifications"
+
+    creator_id: int = Field(foreign_key=CREATOR_FK, primary_key=True)
+    primary_niche: str
+    sub_niches: list[str] = Field(default_factory=list, sa_column=json_column())
+    content_themes: list[str] = Field(default_factory=list, sa_column=json_column())
+    tone: str
+    audience_level: str
+    language: str
+    relevance: float
+    brand_safety_flags: list[str] = Field(default_factory=list, sa_column=json_column())
+    evidence: list[str] = Field(default_factory=list, sa_column=json_column())
+    provider: str
+    model: str
+    prompt_version: str
+    classified_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
+
+
+class FilterResult(SQLModel, table=True):
+    __tablename__ = "filter_results"
+
+    creator_id: int = Field(foreign_key=CREATOR_FK, primary_key=True)
+    run_id: int | None = Field(default=None, foreign_key=RUN_FK)
+    status: QualificationStatus
+    reasons: list[dict[str, str]] = Field(default_factory=list, sa_column=json_column())
+    score: float | None = None
+    rules_version: str
+    evaluated_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
+
+
+class Contact(SQLModel, table=True):
+    __tablename__ = "contacts"
+
+    creator_id: int = Field(foreign_key=CREATOR_FK, primary_key=True)
+    email: str = EMAIL_NOT_FOUND
+    email_status: EmailStatus = EmailStatus.NOT_FOUND
+    email_source: EmailSource = EmailSource.NONE
+    email_source_url: str | None = None
+    instagram: str | None = None
+    tiktok: str | None = None
+    x: str | None = None
+    linkedin: str | None = None
+    website: str | None = None
+    notes: list[str] = Field(default_factory=list, sa_column=json_column())
+    enriched_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
+
+
+class LlmCacheEntry(SQLModel, table=True):
+    """Re-runs and resumes reuse earlier answers instead of spending free-tier quota again."""
+
+    __tablename__ = "llm_cache"
+
+    key: str = Field(primary_key=True)
+    response_text: str
+    provider: str
+    model: str
+    created_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))

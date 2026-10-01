@@ -65,3 +65,32 @@ filters:
   accepted_niches: [Technology, EdTech]
   allowed_languages: [en, hi-en]
   geography_allowlist: []   # empty = record country but do not filter on it
+
+llm:
+  classify_temperature: 0.1
+  # Several creators per call keeps ~260 classifications inside free-tier request limits.
+  classify_batch_size: 5
+  request_timeout_seconds: 60
+  # Client-side pacing, deliberately under each provider's free-tier requests/minute.
+  requests_per_minute:
+    gemini: 8
+    groq: 20
+
+scoring:
+  # Brand-fit score (0-100) ranks qualified creators; weights must sum to 100.
+  weights:
+    relevance: 35
+    engagement: 25
+    size_fit: 15
+    activity: 15
+    contactability: 10
+  engagement_rate_for_full_marks: 0.08
+  size_sweet_spot_min: 10000
+  size_sweet_spot_max: 50000
+  uploads_for_full_activity: 6
+
+enrichment:
+  max_pages_per_site: 4
+  request_timeout_seconds: 10
+  seconds_between_requests_per_domain: 1.0
+  user_agent: "EdxsoOutreachResearchBot/1.0 (+assignment prototype; respects robots.txt)"

@@ -1,0 +1,91 @@
+import httpx
+import openai
+import pytest
+from pydantic import BaseModel
+from sqlmodel import Session
+from tenacity import wait_none
+
+from outreach.llm.cache import LlmCache
+from outreach.llm.client import LlmClient, LlmUnavailableError, parse_json_output
+from outreach.llm.types import ChatMessage, LlmRequest, Role
+
+
+class Answer(BaseModel):
+    niche: str
+
+
+REQUEST = LlmRequest(
+    messages=(ChatMessage(Role.USER, "classify"),), temperature=0.1, prompt_version="test_v1"
+)
+
+
+def rate_limit_error() -> openai.RateLimitError:
+    response = httpx.Response(429, request=httpx.Request("POST", "https://llm.test/v1"))
+    return openai.RateLimitError("rate limited", response=response, body=None)
+
+
+class ScriptedBackend:
+    """Returns (or raises) the scripted outcomes in order and counts calls."""
+
+    def __init__(self, name: str, outcomes: list) -> None:
+        self.name = name
+        self.model = f"{name}-model"
+        self._outcomes = outcomes
+        self.calls = 0
+
+    def complete(self, request: LlmRequest) -> str:
+        outcome = self._outcomes[min(self.calls, len(self._outcomes) - 1)]
+        self.calls += 1
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+def make_client(session: Session, *backends: ScriptedBackend) -> LlmClient:
+    return LlmClient(list(backends), LlmCache(session), backoff=wait_none())
+
+
+def test_falls_back_to_next_provider_after_repeated_rate_limits(session: Session) -> None:
+    primary = ScriptedBackend("gemini", [rate_limit_error()])
+    fallback = ScriptedBackend("groq", ['{"niche": "EdTech"}'])
+
+    result = make_client(session, primary, fallback).complete_json(REQUEST, Answer)
+
+    assert result.value.niche == "EdTech"
+    assert result.provider == "groq"
+    assert primary.calls == 3
+
+
+def test_malformed_json_is_retried_on_the_same_provider(session: Session) -> None:
+    backend = ScriptedBackend("gemini", ["Sure! here you go", '```json\n{"niche": "Tech"}\n```'])
+
+    result = make_client(session, backend).complete_json(REQUEST, Answer)
+
+    assert result.value.niche == "Tech"
+    assert backend.calls == 2
+
+
+def test_second_identical_request_is_served_from_cache(session: Session) -> None:
+    backend = ScriptedBackend("gemini", ['{"niche": "Tech"}'])
+    client = make_client(session, backend)
+
+    client.complete_json(REQUEST, Answer)
+    second = client.complete_json(REQUEST, Answer)
+
+    assert second.from_cache
+    assert backend.calls == 1
+
+
+def test_raises_when_every_provider_fails(session: Session) -> None:
+    backends = [ScriptedBackend("gemini", [rate_limit_error()]), ScriptedBackend("groq", ["{}"])]
+
+    with pytest.raises(LlmUnavailableError) as error:
+        make_client(session, *backends).complete_json(REQUEST, Answer)
+
+    assert "gemini" in str(error.value)
+    assert "groq" in str(error.value)
+
+
+def test_parse_json_output_rejects_schema_mismatch() -> None:
+    with pytest.raises(ValueError):
+        parse_json_output('{"unexpected": 1}', Answer)
