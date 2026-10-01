@@ -1,0 +1,18 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check src app tests && uv run ruff format --check src app tests
+      - name: Test (offline — no API keys needed)
+        run: uv run pytest -q
