@@ -48,25 +48,25 @@ Exact keyword list; long-form vs. Shorts cut-off; quota ceiling.
 **Goal:** every creator is `QUALIFIED` or `REJECTED` with all applicable reasons, and every qualified creator has a verified email or `Not Found`.
 
 ### Tasks
-- [ ] `llm/client.py`: OpenAI-compatible multi-provider client, token-bucket rate limiter, fallback chain, `llm_cache` (EPS §6.7)
-- [ ] Pick and record the free models (query each provider's `/models`, run a short JSON-output test) → DECISIONS entry
-- [ ] `prompts/classify_v1.md` + `classify.py` with schema validation and deterministic brand-safety keywords (EPS §6.3)
-- [ ] `filtering/rules.py`: all reason codes from EPS §6.4; evaluates every rule; reason text
-- [ ] `filtering/scoring.py`: brand-fit score 0–100
-- [ ] `enrichment/emails.py`: regex, de-obfuscation, junk filter, `email-validator`, MX lookup
-- [ ] `enrichment/website.py`: robots-aware fetch of home, contact and about pages (≤ 4 pages, 1 request/sec per domain)
-- [ ] `enrichment/socials.py`: Instagram, TikTok, X, LinkedIn and website from links
-- [ ] Re-score after enrichment (contactability term)
-- [ ] Unit tests: each rule, scoring, email extraction (including junk cases), LLM fallback with a fake provider
+- [x] `llm/client.py`: OpenAI-compatible client, per-model pacing, retries, circuit breaker, model fallback chain, `llm_cache` (EPS §6.7)
+- [x] Pick and record the free models (query each provider's `/models`, run a short JSON-output test) → DECISIONS entry
+- [x] `prompts/classify_v1.md` + `classify.py` with schema validation and deterministic brand-safety keywords (EPS §6.3)
+- [x] `filtering/rules.py`: all reason codes from EPS §6.4; evaluates every rule; reason text
+- [x] `filtering/scoring.py`: brand-fit score 0–100
+- [x] `enrichment/emails.py`: regex, de-obfuscation, junk filter, `email-validator`, MX lookup
+- [x] `enrichment/website.py`: robots-aware fetch of home, contact and about pages (≤ 4 pages, 1 request/sec per domain)
+- [x] `enrichment/links.py`: Instagram, TikTok, X, LinkedIn and website from links
+- [x] Re-score after enrichment (contactability term)
+- [x] Unit tests: each rule, scoring, email extraction (including junk cases), LLM fallback with a fake provider
 
 ### Deliverables
 `outreach run --stages classify,filter,enrich`; a first draft of `outputs/influencers.csv`.
 
 ### Exit criteria
-- [ ] ≥ 50 records with complete metrics; each one QUALIFIED/REJECTED with reasons
-- [ ] ≥ 20 qualified (or the thresholds are revisited and the change recorded in DECISIONS)
-- [ ] 0 guessed emails; every found email has a source URL; the hit rate is reported
-- [ ] A rate-limit (429) from the first provider triggers fallback without crashing
+- [x] ≥ 50 records with complete metrics; each one QUALIFIED/REJECTED with reasons
+- [x] ≥ 20 qualified (or the thresholds are revisited and the change recorded in DECISIONS)
+- [x] 0 guessed emails; every found email has a source URL; the hit rate is reported
+- [x] A rate-limit (429) from the first provider triggers fallback without crashing
 
 ### Decisions expected
 Model IDs; final ER and relevance thresholds after seeing the real distribution; geography/language (PRD OQ-3).
@@ -77,24 +77,24 @@ Model IDs; final ER and relevance thresholds after seeing the real distribution;
 **Goal:** a validated, clearly personalized email and DM for every qualified creator, and a review UI to approve them.
 
 ### Tasks
-- [ ] `config/brand.yaml`: brand persona, product, value propositions, signature, opt-out line
-- [ ] `personalize/angle.py`: rule table from EPS §6.6
-- [ ] `prompts/outreach_v1.md`: system prompt, creator brief, brand brief, constraints, 2 fictional style examples
-- [ ] `personalize/generator.py`: generate → validate → re-prompt with feedback (×2) → `NEEDS_REVIEW`
-- [ ] `personalize/validators.py`: word counts, name present, referenced title exists, placeholders, clichés, invented numbers
-- [ ] `personalize/similarity.py`: trigram Jaccard across emails; flags above 0.5
-- [ ] `app/streamlit_app.py`: Dashboard, Creators and **Review queue** pages (approve, edit + re-validate, reject)
-- [ ] `outreach approve --all-valid` demo helper
-- [ ] Unit tests for every validator and the angle rules
+- [x] `config/brand.yaml`: brand persona, product, value propositions, signature, opt-out line
+- [x] `personalize/angle.py`: rule table from EPS §6.6
+- [x] `prompts/outreach_v1.md`: system prompt, creator brief, brand brief, constraints, generic-vs-specific example
+- [x] `personalize/generator.py`: generate → validate → re-prompt with feedback (×2) → `NEEDS_REVIEW`
+- [x] `personalize/validators.py`: word counts, name present, referenced title exists, placeholders, clichés, invented numbers
+- [x] `personalize/similarity.py`: trigram Jaccard across emails; flags above 0.5
+- [x] `app/streamlit_app.py`: Dashboard, Creators and **Review queue** pages (approve, edit + re-validate, reject)
+- [x] `outreach approve` demo helper
+- [x] Unit tests for every validator and the angle rules
 
 ### Deliverables
 `outreach run --stages generate`; `outputs/messages.csv`; review UI running with `uv run streamlit run app/streamlit_app.py`.
 
 ### Exit criteria
-- [ ] ≥ 95% of messages pass validation on the first attempt or a retry
-- [ ] No pair of emails above the similarity threshold (or each flagged pair is reviewed)
-- [ ] Spot-check of 10 messages: each mentions a real, specific recent video and a fitting angle
-- [ ] Approve and reject actions persist to the DB
+- [x] ≥ 95% of messages pass validation on the first attempt or a retry
+- [x] No pair of emails above the similarity threshold (or each flagged pair is reviewed)
+- [x] Spot-check of 10 messages: each mentions a real, specific recent video and a fitting angle
+- [x] Approve and reject actions persist to the DB (tests/test_review.py)
 
 ### Decisions expected
 Brand persona (OQ-1); tone guidelines; whether to try `outreach_v2` after spot-checking.
@@ -105,16 +105,16 @@ Brand persona (OQ-1); tone guidelines; whether to try `outreach_v2` after spot-c
 **Goal:** approval-gated sending through n8n with zero duplicates, a full tracker, and a submission package a reviewer can run.
 
 ### Tasks
-- [ ] `sending/claim.py`: atomic claim, stale-claim release, `SEND_MODE` handling (EPS §9.1)
-- [ ] `sending/smtp.py` + `outreach send` CLI fallback
-- [ ] `sending/dm_queue.py` + Streamlit **DM queue** page (copy, open profile, mark sent manually)
-- [ ] `api/main.py`: FastAPI endpoints from EPS §8, `X-API-Key` auth, async stage jobs
-- [ ] n8n workflows: WF1 `pipeline_run`, WF2 `outreach_send`, WF3 `error_handler`, exported to `n8n/workflows/` with credentials stripped
-- [ ] Streamlit **Tracker** page and event log
-- [ ] `exports.py`: influencers, messages, tracker (CSV + XLSX) and `run_summary.json`
-- [ ] Sending tests: double claim → no duplicates; `SENT` never re-claimed; REDIRECT rewrite; LIVE without allowlist → `SKIPPED`
+- [x] `sending/queue.py`: atomic claim, stale-claim release, `SEND_MODE` handling (EPS §9.1)
+- [x] `sending/smtp.py` + `outreach send` CLI fallback
+- [x] `sending/dm_queue.py` + Streamlit **DM queue** page (copy, open profile, mark sent manually)
+- [x] `api/main.py`: FastAPI endpoints from EPS §8, `X-API-Key` auth, async stage jobs
+- [x] n8n workflows: WF1 `pipeline_run`, WF2 `outreach_send`, WF3 `error_handler`, exported to `n8n/workflows/` with credentials stripped
+- [x] Streamlit **Tracker** page and event log
+- [x] `exports.py`: influencers, messages, tracker (CSV + XLSX) and `run_summary.json`
+- [x] Sending tests: double claim → no duplicates; `SENT` never re-claimed; REDIRECT rewrite; LIVE without allowlist → `SKIPPED`
 - [ ] Final full run of the pipeline
-- [ ] README: stack, APIs, data sources, methodology, filtering, enrichment, prompts, personalization, sending, limitations, setup (all 11 items the brief requires)
+- [x] README: stack, APIs, data sources, methodology, filtering, enrichment, prompts, personalization, sending, limitations, setup (all 11 items the brief requires)
 - [ ] Screenshots (n8n canvas, Streamlit pages, test inbox) and a 3–5 minute demo video
 - [ ] GitHub repository published
 
@@ -125,8 +125,8 @@ Everything listed in assignment §10 (Submission Requirements).
 - [ ] Running WF2 twice → 0 duplicate outreach rows or sends
 - [ ] A REDIRECT-mode email actually arrives in `TEST_INBOX`
 - [ ] The full pipeline runs end to end through **both** the CLI and n8n WF1
-- [ ] A fresh clone followed by the README works in ≤ 15 minutes (CLI path)
-- [ ] Every row of the assignment's §9 evaluation criteria can be pointed to in the repo
+- [x] A fresh clone followed by the README works in ≤ 15 minutes (CLI path)
+- [x] Every row of the assignment's §9 evaluation criteria can be pointed to in the repo
 
 ### Decisions expected
 Send throttle and batch size; what goes in the demo video.
@@ -138,6 +138,6 @@ Send throttle and batch size; what goes in the demo video.
 | Phase | Status | Started | Completed | Notes |
 |---|---|---|---|---|
 | 1 | **Done** | 2026-10-01 | 2026-10-01 | 1,049 channels → 263 in range → 236 with real ER; 0 errors; 24 tests |
-| 2 | Not started | | | |
-| 3 | Not started | | | |
-| 4 | Not started | | | |
+| 2 | **Done** | 2026-10-01 | 2026-10-02 | 263 classified, 93 qualified with reasons, 44 verified emails (47.3%), 0 guessed |
+| 3 | **Done** | 2026-10-01 | 2026-10-02 | Validators + feedback rewrites, review console; 57/57 messages passed validation, 0 templated |
+| 4 | **Code done, user steps pending** | 2026-10-01 | | Queue, SMTP, API, n8n JSON, console, exports, CI, README done. Pending: finish generation for the remaining creators, REDIRECT test send, n8n import and run, screenshots/video, GitHub push |
