@@ -14,8 +14,11 @@ from outreach.models import (
     Contact,
     Creator,
     CreatorMetrics,
+    DeliveryStatus,
     EmailStatus,
     FilterResult,
+    Outreach,
+    OutreachChannel,
     OutreachMessage,
     PipelineError,
     PipelineRun,
@@ -23,6 +26,11 @@ from outreach.models import (
     ReviewStatus,
 )
 
+SENT_LABEL_BY_STATUS = {
+    DeliveryStatus.SENT: "Yes",
+    DeliveryStatus.SIMULATED: "Yes (simulated)",
+    DeliveryStatus.MANUAL_SENT: "Yes (manual)",
+}
 EMAIL_NOT_SEARCHED = "Not searched (rejected)"
 EMAIL_PENDING = "Pending enrichment"
 SUBSCRIBERS_HIDDEN = "Hidden"
@@ -208,6 +216,57 @@ def message_rows(session: Session, campaign_id: str) -> list[dict[str, Any]]:
                 "Model": f"{message.provider}/{message.model}",
                 "Prompt Version": message.prompt_version,
                 "Review Status": message.review_status,
+            }
+        )
+    return rows
+
+
+def _delivery_status_label(
+    message: OutreachMessage, contact: Contact | None, row: Outreach | None
+) -> str:
+    if row is not None:
+        return row.status
+    if message.review_status != ReviewStatus.APPROVED:
+        return f"Awaiting review ({message.review_status})"
+    if contact is None or contact.email_status != EmailStatus.FOUND:
+        return "No email - DM only"
+    return "Approved, not yet queued"
+
+
+def tracker_rows(session: Session, campaign_id: str) -> list[dict[str, Any]]:
+    """The outreach tracker: one row per creator with a generated message."""
+    creators = {c.id: c for c in session.exec(select(Creator)).all()}
+    contacts = _by_creator_id(session, Contact)
+    deliveries = {
+        (row.creator_id, row.channel): row
+        for row in session.exec(select(Outreach).where(Outreach.campaign_id == campaign_id)).all()
+    }
+    messages = session.exec(
+        select(OutreachMessage).where(OutreachMessage.campaign_id == campaign_id)
+    ).all()
+    rows = []
+    for message in messages:
+        contact = contacts.get(message.creator_id)
+        email_row = deliveries.get((message.creator_id, OutreachChannel.EMAIL))
+        dm_row = deliveries.get((message.creator_id, OutreachChannel.INSTAGRAM_DM))
+        rows.append(
+            {
+                "Influencer": creators[message.creator_id].name,
+                "Email": contact.email if contact else EMAIL_PENDING,
+                "Message Generated": "Yes",
+                "Review Status": message.review_status,
+                "Sent": SENT_LABEL_BY_STATUS.get(email_row.status, "No") if email_row else "No",
+                "Date": f"{email_row.sent_at:%Y-%m-%d %H:%M} UTC"
+                if email_row and email_row.sent_at
+                else "",
+                "Status": _delivery_status_label(message, contact, email_row),
+                "Mode": (email_row.mode or "") if email_row else "",
+                "Attempts": email_row.attempts if email_row else 0,
+                "Error": (email_row.last_error or "") if email_row else "",
+                "Instagram DM Sent": "Yes (manual)" if dm_row else "No",
+                "DM Date": f"{dm_row.sent_at:%Y-%m-%d %H:%M} UTC"
+                if dm_row and dm_row.sent_at
+                else "",
             }
         )
     return rows
