@@ -1,0 +1,52 @@
+[project]
+name = "outreach"
+version = "1.0.0"
+description = "Automated micro-influencer discovery, qualification, enrichment and personalized outreach."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "pyyaml>=6.0",
+    "sqlmodel>=0.0.22",
+    "httpx>=0.27",
+    "tenacity>=9.0",
+    "typer>=0.12",
+    "rich>=13.9",
+    "openai>=1.54",
+    "beautifulsoup4>=4.12",
+    "email-validator>=2.2",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "streamlit>=1.40",
+    "pandas>=2.2",
+    "openpyxl>=3.1",
+]
+
+[project.scripts]
+outreach = "outreach.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/outreach"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001"]  # en-dash / arrow characters in user-facing strings are intentional

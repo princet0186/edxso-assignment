@@ -1,0 +1,67 @@
+# Campaign rules. Every value here changes pipeline behaviour, so bump rules_version
+# whenever a threshold changes — it is stored with every filter result.
+
+campaign_id: edtech-2026-q4
+rules_version: "1.0"
+niche_name: Technology & EdTech
+
+discovery:
+  # Searching recent *videos* (not channels) surfaces creators who are active now.
+  published_within_days: 90
+  results_per_query: 50
+  search_order: relevance
+  relevance_language: en
+  region_code: null
+  recent_videos_per_channel: 10
+  queries:
+    - python tutorial for beginners
+    - learn javascript from scratch
+    - web development roadmap
+    - data science project walkthrough
+    - machine learning explained simply
+    - AI tools for students
+    - coding interview preparation
+    - DSA in java
+    - leetcode problem explained
+    - system design basics
+    - react js project tutorial
+    - django tutorial
+    - flutter app tutorial
+    - android development tutorial
+    - devops for beginners
+    - docker tutorial for beginners
+    - linux command line basics
+    - cybersecurity for beginners
+    - aws cloud basics tutorial
+    - sql tutorial for data analysis
+    - excel tips for data analysis
+    - power bi tutorial
+    - chatgpt productivity tips
+    - no code app builder tutorial
+    - computer science concepts explained
+    - tech career advice for freshers
+    - software engineer day in the life
+    - arduino project tutorial
+    - ui ux design tutorial
+    - how to learn programming
+
+youtube:
+  # Default daily quota is 10,000 units; stop well before it so re-runs stay possible.
+  quota_ceiling_units: 8000
+
+metrics:
+  # Stats on videos younger than this have not settled yet.
+  min_video_age_hours: 48
+  # Shorts (up to 3 min) inflate like-rates, so long-form videos are preferred for ER.
+  long_form_min_seconds: 180
+  min_sample_videos: 3
+  activity_window_days: 90
+
+filters:
+  subscribers_min: 5000
+  subscribers_max: 100000
+  min_engagement_rate: 0.02
+  min_relevance: 0.6
+  accepted_niches: [Technology, EdTech]
+  allowed_languages: [en, hi-en]
+  geography_allowlist: []   # empty = record country but do not filter on it
