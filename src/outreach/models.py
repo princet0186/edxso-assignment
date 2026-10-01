@@ -8,6 +8,9 @@ from sqlalchemy import JSON, Column, DateTime, UniqueConstraint
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
+CREATOR_FK = "creators.id"
+RUN_FK = "runs.id"
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -72,6 +75,17 @@ class PipelineRun(SQLModel, table=True):
     failure: str | None = None
 
 
+class SearchQueryLog(SQLModel, table=True):
+    """Remembers which queries already ran, so a re-run (e.g. after a quota stop) does not
+    spend 100 units per query searching again for channels it already has."""
+
+    __tablename__ = "search_query_log"
+
+    query: str = Field(primary_key=True)
+    searched_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
+    channel_ids_found: int
+
+
 class Creator(SQLModel, table=True):
     __tablename__ = "creators"
     __table_args__ = (UniqueConstraint("platform", "platform_id"),)
@@ -91,7 +105,7 @@ class Creator(SQLModel, table=True):
     uploads_playlist_id: str | None = None
     topic_categories: list[str] = Field(default_factory=list, sa_column=json_column())
     discovered_via_query: str
-    first_seen_run_id: int | None = Field(default=None, foreign_key="runs.id")
+    first_seen_run_id: int | None = Field(default=None, foreign_key=RUN_FK)
     discovered_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
     videos_fetched_at: datetime | None = Field(default=None, sa_column=utc_column(nullable=True))
 
@@ -100,7 +114,7 @@ class Video(SQLModel, table=True):
     __tablename__ = "videos"
 
     video_id: str = Field(primary_key=True)
-    creator_id: int = Field(foreign_key="creators.id", index=True)
+    creator_id: int = Field(foreign_key=CREATOR_FK, index=True)
     title: str
     description: str = ""
     published_at: datetime = Field(sa_column=utc_column(nullable=False))
@@ -114,7 +128,7 @@ class Video(SQLModel, table=True):
 class CreatorMetrics(SQLModel, table=True):
     __tablename__ = "creator_metrics"
 
-    creator_id: int = Field(foreign_key="creators.id", primary_key=True)
+    creator_id: int = Field(foreign_key=CREATOR_FK, primary_key=True)
     engagement_rate: float | None = None
     engagement_method: EngagementMethod
     sample_size: int
@@ -132,8 +146,8 @@ class PipelineError(SQLModel, table=True):
     __tablename__ = "pipeline_errors"
 
     id: int | None = Field(default=None, primary_key=True)
-    run_id: int | None = Field(default=None, foreign_key="runs.id")
-    creator_id: int | None = Field(default=None, foreign_key="creators.id")
+    run_id: int | None = Field(default=None, foreign_key=RUN_FK)
+    creator_id: int | None = Field(default=None, foreign_key=CREATOR_FK)
     stage: str
     message: str
     occurred_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
