@@ -1,6 +1,8 @@
 """Command-line entry point: `uv run outreach --help`."""
 
 import logging
+import signal
+import sys
 from typing import Annotated
 
 import typer
@@ -22,6 +24,7 @@ ALL_STAGES = "all"
 RECENT_RUNS_SHOWN = 5
 API_DEFAULT_HOST = "127.0.0.1"
 API_DEFAULT_PORT = 8000
+SIGTERM_EXIT_CODE = 143
 # HTTP client libraries log every request at INFO; that drowns out pipeline progress.
 NOISY_HTTP_LOGGERS = ("httpx", "httpx2", "openai")
 
@@ -40,6 +43,9 @@ def configure_logging(
     )
     for noisy_logger in NOISY_HTTP_LOGGERS:
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+    # `kill` sends SIGTERM, which ends the process without a Python exception; turning it into
+    # SystemExit lets the pipeline record the run as FAILED instead of leaving it RUNNING.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(SIGTERM_EXIT_CODE))
 
 
 @app.command("init-db")
