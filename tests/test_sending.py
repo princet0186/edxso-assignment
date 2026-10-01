@@ -6,16 +6,10 @@ from sqlmodel import Session, select
 
 from outreach.config import Secrets, SendMode, load_brand, load_settings
 from outreach.models import (
-    Contact,
-    Creator,
     DeliveryStatus,
-    EmailSource,
-    EmailStatus,
     Outreach,
     OutreachChannel,
     OutreachEvent,
-    OutreachMessage,
-    Platform,
     ReviewStatus,
     utc_now,
 )
@@ -30,6 +24,7 @@ from outreach.sending.queue import (
     record_result,
     release_stale_claims,
 )
+from tests.factories import seed_creator
 
 SETTINGS = load_settings()
 BRAND = load_brand()
@@ -38,53 +33,6 @@ CAMPAIGN = SETTINGS.campaign_id
 
 def secrets(mode: SendMode, **overrides) -> Secrets:
     return Secrets(_env_file=None, send_mode=mode, sender_name="Prince", **overrides)
-
-
-def seed_creator(
-    session: Session,
-    channel_id: str,
-    email: str,
-    review_status: ReviewStatus = ReviewStatus.APPROVED,
-    instagram: str | None = None,
-) -> Creator:
-    creator = Creator(
-        platform=Platform.YOUTUBE,
-        platform_id=channel_id,
-        name=f"Creator {channel_id}",
-        profile_url="https://youtube.com/x",
-        discovered_via_query="q",
-    )
-    session.add(creator)
-    session.commit()
-    session.add(
-        Contact(
-            creator_id=creator.id,
-            email=email,
-            email_status=EmailStatus.FOUND,
-            email_source=EmailSource.CHANNEL_DESCRIPTION,
-            instagram=instagram,
-        )
-    )
-    session.add(
-        OutreachMessage(
-            creator_id=creator.id,
-            campaign_id=CAMPAIGN,
-            angle="AFFILIATE",
-            angle_reason="r",
-            email_subject="Your binary search video",
-            email_body="Validated body.",
-            email_word_count=70,
-            instagram_dm="Hey!",
-            dm_word_count=20,
-            attempts=1,
-            provider="t",
-            model="t",
-            prompt_version="outreach_v1",
-            review_status=review_status,
-        )
-    )
-    session.commit()
-    return creator
 
 
 def outreach_rows(session: Session) -> list[Outreach]:
