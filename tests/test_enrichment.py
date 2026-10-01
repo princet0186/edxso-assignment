@@ -42,6 +42,7 @@ def video(video_id: str, description: str) -> Video:
         ("mail asha [at] gmail [dot] com", ["asha@gmail.com"]),
         ("collab: asha(at)studio(dot)in", ["asha@studio.in"]),
         ("icon logo@2x.png and noreply@service.com and you@example.com", []),
+        ("Template footer: info@mysite.com", []),
     ],
 )
 def test_extract_emails_normalises_deobfuscates_and_drops_junk(text, expected) -> None:

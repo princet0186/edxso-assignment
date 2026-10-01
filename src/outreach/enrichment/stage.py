@@ -96,7 +96,11 @@ def _build_contact(
 def _first_valid(
     candidates: list[EmailCandidate], check: EmailChecker, notes: list[str]
 ) -> EmailCandidate | None:
+    checked: set[str] = set()
     for candidate in candidates:
+        if candidate.address in checked:
+            continue
+        checked.add(candidate.address)
         result = check(candidate.address)
         if result.is_valid:
             return candidate

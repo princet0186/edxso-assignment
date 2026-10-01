@@ -17,8 +17,11 @@ OBFUSCATED_DOT = re.compile(r"\s*[\[({<]\s*dot\s*[\])}>]\s*", re.IGNORECASE)
 BUSINESS_CONTEXT = re.compile(
     r"business|collab|sponsor|inquir|enquir|contact|partner|promotion|\be-?mail\b", re.IGNORECASE
 )
+# Template defaults and tooling addresses. Some of these domains really exist and accept mail
+# (mysite.com does), so a DNS check alone would wrongly accept them.
 PLACEHOLDER_DOMAINS = {
-    "example.com", "domain.com", "email.com", "yourdomain.com",
+    "example.com", "domain.com", "email.com", "yourdomain.com", "mysite.com", "yoursite.com",
+    "website.com", "company.com", "yourcompany.com", "test.com",
     "sentry.io", "wixpress.com", "sentry.wixpress.com",
 }  # fmt: skip
 NON_PERSONAL_PREFIXES = ("noreply", "no-reply", "donotreply")
