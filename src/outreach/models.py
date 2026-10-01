@@ -86,6 +86,28 @@ class ReviewStatus(StrEnum):
     REJECTED = "REJECTED"
 
 
+class OutreachChannel(StrEnum):
+    EMAIL = "EMAIL"
+    INSTAGRAM_DM = "INSTAGRAM_DM"
+
+
+class DeliveryStatus(StrEnum):
+    QUEUED = "QUEUED"
+    SENDING = "SENDING"
+    SENT = "SENT"
+    SIMULATED = "SIMULATED"
+    FAILED = "FAILED"
+    SKIPPED = "SKIPPED"
+    MANUAL_SENT = "MANUAL_SENT"
+
+
+class JobStatus(StrEnum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+
+
 EMAIL_NOT_FOUND = "Not Found"
 NOT_AVAILABLE = "Not Available"
 
@@ -273,3 +295,55 @@ class OutreachMessage(SQLModel, table=True):
     edited_by_reviewer: bool = False
     created_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
     reviewed_at: datetime | None = Field(default=None, sa_column=utc_column(nullable=True))
+
+
+class Outreach(SQLModel, table=True):
+    """One delivery per creator, channel and campaign. Both UNIQUE constraints exist so that
+    duplicate outreach is impossible at the database level, whatever calls the send queue."""
+
+    __tablename__ = "outreach"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "channel", "creator_id"),
+        UniqueConstraint("campaign_id", "channel", "recipient"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    creator_id: int = Field(foreign_key=CREATOR_FK, index=True)
+    campaign_id: str
+    channel: OutreachChannel
+    recipient: str
+    status: DeliveryStatus
+    mode: str | None = None
+    attempts: int = 0
+    queued_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
+    claimed_at: datetime | None = Field(default=None, sa_column=utc_column(nullable=True))
+    sent_at: datetime | None = Field(default=None, sa_column=utc_column(nullable=True))
+    provider_message_id: str | None = None
+    last_error: str | None = None
+
+
+class OutreachEvent(SQLModel, table=True):
+    """Append-only outreach log: every claim, send, simulation, failure and skip."""
+
+    __tablename__ = "outreach_events"
+
+    id: int | None = Field(default=None, primary_key=True)
+    outreach_id: int = Field(foreign_key="outreach.id", index=True)
+    event: str
+    detail: dict[str, str] = Field(default_factory=dict, sa_column=json_column())
+    occurred_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
+
+
+class Job(SQLModel, table=True):
+    """A pipeline stage started through the API, polled by n8n until it finishes."""
+
+    __tablename__ = "jobs"
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: int = Field(foreign_key=RUN_FK)
+    stage: str
+    status: JobStatus = JobStatus.QUEUED
+    report: dict[str, int] = Field(default_factory=dict, sa_column=json_column())
+    error: str | None = None
+    created_at: datetime = Field(default_factory=utc_now, sa_column=utc_column(nullable=False))
+    finished_at: datetime | None = Field(default=None, sa_column=utc_column(nullable=True))

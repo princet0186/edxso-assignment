@@ -110,3 +110,12 @@ personalization:
     ambassador_min_uploads: 6
     sponsorship_min_subscribers: 20000
     ugc_max_subscribers: 15000
+
+sending:
+  batch_size: 10
+  max_attempts: 3
+  # A claim older than this is assumed to belong to a crashed sender and is released.
+  stale_claim_minutes: 10
+  # Spacing between real sends keeps well inside Gmail's sending limits.
+  seconds_between_sends: 2
+  smtp_timeout_seconds: 30

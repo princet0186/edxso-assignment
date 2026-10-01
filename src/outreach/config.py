@@ -179,6 +179,14 @@ class PersonalizationSettings(FrozenModel):
     angles: AngleThresholds
 
 
+class SendingSettings(FrozenModel):
+    batch_size: int = Field(gt=0)
+    max_attempts: int = Field(gt=0)
+    stale_claim_minutes: int = Field(gt=0)
+    seconds_between_sends: float = Field(ge=0)
+    smtp_timeout_seconds: float = Field(gt=0)
+
+
 class Settings(FrozenModel):
     campaign_id: str
     rules_version: str
@@ -191,6 +199,7 @@ class Settings(FrozenModel):
     scoring: ScoringSettings
     enrichment: EnrichmentSettings
     personalization: PersonalizationSettings
+    sending: SendingSettings
 
 
 class BrandProfile(FrozenModel):
