@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 from outreach.classify import classify_creators
 from outreach.config import Settings, load_secrets, load_settings
 from outreach.discovery import discover_creators
+from outreach.enrichment.stage import enrich_contacts
 from outreach.filtering.stage import qualify_creators
 from outreach.metrics import compute_metrics
 from outreach.models import PipelineRun, RunStatus, utc_now
@@ -31,6 +32,7 @@ class Stage(StrEnum):
     METRICS = "metrics"
     CLASSIFY = "classify"
     FILTER = "filter"
+    ENRICH = "enrich"
 
 
 STAGE_HANDLERS: dict[Stage, StageHandler] = {
@@ -38,6 +40,7 @@ STAGE_HANDLERS: dict[Stage, StageHandler] = {
     Stage.METRICS: compute_metrics,
     Stage.CLASSIFY: classify_creators,
     Stage.FILTER: qualify_creators,
+    Stage.ENRICH: enrich_contacts,
 }
 
 
